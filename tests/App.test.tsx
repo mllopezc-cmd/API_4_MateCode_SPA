@@ -1,6 +1,84 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import {
+    act,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+} from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import type {
+    User,
+    UserCredential,
+} from 'firebase/auth';
+import type {
+    AuthContextType,
+    AuthStatus,
+} from '../src/context/AuthContext';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+
+vi.mock('../src/context/AuthProvider', async () => {
+    const React = await import('react');
+    const { AuthContext } = await import(
+        '../src/context/AuthContext'
+    );
+
+    function TestAuthProvider({
+        children,
+    }: {
+        children: ReactNode;
+    }) {
+        const [status, setStatus] =
+            React.useState<AuthStatus>('unauthenticated');
+
+        const [user, setUser] = React.useState<User | null>(null);
+
+        const login: AuthContextType['login'] = async () => {
+            const testUser = {
+                uid: 'test-user',
+                email: 'test@example.com',
+                emailVerified: true,
+            } as User;
+
+            setUser(testUser);
+            setStatus('authenticated');
+
+            return {
+                user: testUser,
+            } as UserCredential;
+        };
+
+        const logout: AuthContextType['logout'] = async () => {
+            setUser(null);
+            setStatus('unauthenticated');
+        };
+
+        const value: AuthContextType = {
+            status,
+            user,
+            error: null,
+            isAuthenticated: status === 'authenticated',
+            login,
+            logout,
+            sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
+            refreshUser: vi.fn().mockResolvedValue(undefined),
+            retryInitialization: () => {
+                setUser(null);
+                setStatus('unauthenticated');
+            },
+        };
+
+        return React.createElement(
+            AuthContext.Provider,
+            { value },
+            children,
+        );
+    }
+
+    return { AuthProvider: TestAuthProvider };
+
+});
+
 import { AppRoutes } from '../src/App';
 
 function LocationProbe() {
@@ -40,6 +118,30 @@ function renderLoginWithReturnTo(from: unknown) {
             <LocationProbe />
         </MemoryRouter>,
     );
+}
+
+async function loginThroughForm() {
+    fireEvent.change(
+        screen.getByLabelText('Correo electrónico'),
+        {
+            target: { value: 'test@example.com' },
+        },
+    );
+
+    fireEvent.change(
+        screen.getByLabelText('Contraseña'),
+        {
+            target: { value: 'Password123!' },
+        },
+    );
+
+    await act(async () => {
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Iniciar sesión',
+            }),
+        );
+    });
 }
 
 describe('Rutas públicas de MateCode', () => {
@@ -101,15 +203,15 @@ describe('Protección de rutas privadas', () => {
         ).toBeInTheDocument();
     });
 
-    it('permite entrar al panel después del inicio simulado', () => {
+    it('permite entrar al panel después del inicio de sesión', async () => {
         renderApp('/iniciar-sesion');
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
         expect(
-            screen.getByRole('heading', { name: 'Panel principal' }),
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            }),
         ).toBeInTheDocument();
 
         expect(screen.getByTestId('current-location')).toHaveTextContent(
@@ -117,45 +219,45 @@ describe('Protección de rutas privadas', () => {
         );
     });
 
-    it('regresa a la ruta privada solicitada después del inicio simulado', () => {
+    it('regresa a la ruta privada solicitada después del inicio de sesión', async () => {
         renderApp('/tareas/pendientes');
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
-        expect(
-            screen.getByTestId('current-location'),
-        ).toHaveTextContent('/tareas/pendientes');
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/tareas/pendientes');
+        });
     });
 
-    it('conserva los parámetros y el fragmento de una ruta privada válida', () => {
+    it('conserva los parámetros y el fragmento de una ruta privada válida', async () => {
         renderLoginWithReturnTo({
             pathname: '/tareas',
             search: '?estado=pendiente',
             hash: '#lista',
         });
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
-        expect(
-            screen.getByTestId('current-location'),
-        ).toHaveTextContent('/tareas?estado=pendiente#lista');
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/tareas?estado=pendiente#lista');
+        });
     });
 
-    it('usa el panel como alternativa si el destino es una ruta pública', () => {
+    it('usa el panel como alternativa si el destino es una ruta pública', async () => {
         renderLoginWithReturnTo({
             pathname: '/ayuda',
         });
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
         expect(
-            screen.getByRole('heading', { name: 'Panel principal' }),
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            }),
         ).toBeInTheDocument();
 
         expect(screen.getByTestId('current-location')).toHaveTextContent(
@@ -163,57 +265,65 @@ describe('Protección de rutas privadas', () => {
         );
     });
 
-    it('usa el panel como alternativa si el destino es desconocido', () => {
+    it('usa el panel como alternativa si el destino es desconocido', async () => {
         renderLoginWithReturnTo({
             pathname: '/ruta-inexistente',
         });
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
         expect(
-            screen.getByRole('heading', { name: 'Panel principal' }),
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            }),
         ).toBeInTheDocument();
+
+        expect(screen.getByTestId('current-location')).toHaveTextContent(
+            '/panel',
+        );
     });
 
-    it('usa el panel como alternativa si el destino no tiene una ruta válida', () => {
+    it('usa el panel como alternativa si el destino no tiene una ruta válida', async () => {
         renderLoginWithReturnTo({
             pathname: '//sitio-externo.example',
         });
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
-        expect(
-            screen.getByTestId('current-location'),
-        ).toHaveTextContent('/panel');
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/panel');
+        });
     });
 
-    it('permite acceder a Ayuda desde una sesión autenticada', () => {
+    it('permite acceder a Ayuda desde una sesión autenticada', async () => {
         renderApp('/iniciar-sesion');
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
+
+        await screen.findByRole('heading', {
+            name: 'Panel principal',
+        });
 
         fireEvent.click(screen.getByRole('link', { name: 'Ayuda' }));
 
         expect(
-            screen.getByRole('heading', { name: 'Ayuda de MateCode' }),
+            await screen.findByRole('heading', {
+                name: 'Ayuda de MateCode',
+            }),
         ).toBeInTheDocument();
     });
 
-    it('cierra la sesión y redirige al inicio de sesión', () => {
+    it('cierra la sesión y redirige al inicio de sesión', async () => {
         renderApp('/iniciar-sesion');
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
         expect(
-            screen.getByRole('heading', { name: 'Panel principal' }),
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            }),
         ).toBeInTheDocument();
 
         fireEvent.click(
@@ -221,7 +331,9 @@ describe('Protección de rutas privadas', () => {
         );
 
         expect(
-            screen.getByRole('heading', { name: 'Iniciar sesión' }),
+            await screen.findByRole('heading', {
+                name: 'Iniciar sesión',
+            }),
         ).toBeInTheDocument();
     });
 
@@ -233,45 +345,45 @@ describe('Protección de rutas privadas', () => {
         ).toBeInTheDocument();
     });
 
-    it('usa el panel como alternativa si search tiene un formato inválido', () => {
+    it('usa el panel como alternativa si search tiene un formato inválido', async () => {
         renderLoginWithReturnTo({
             pathname: '/tareas',
             search: 'estado=pendiente',
         });
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
-        expect(screen.getByTestId('current-location')).toHaveTextContent(
-            '/panel',
-        );
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/panel');
+        });
     });
 
-    it('usa el panel como alternativa si hash tiene un formato inválido', () => {
+    it('usa el panel como alternativa si hash tiene un formato inválido', async () => {
         renderLoginWithReturnTo({
             pathname: '/tareas',
             hash: 'lista',
         });
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
-        expect(screen.getByTestId('current-location')).toHaveTextContent(
-            '/panel',
-        );
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/panel');
+        });
     });
 
-    it('impide volver al panel protegido después de cerrar sesión', () => {
+    it('impide volver al panel protegido después de cerrar sesión', async () => {
         renderApp('/iniciar-sesion');
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-        );
+        await loginThroughForm();
 
         expect(
-            screen.getByRole('heading', { name: 'Panel principal' }),
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            }),
         ).toBeInTheDocument();
 
         fireEvent.click(
@@ -279,11 +391,15 @@ describe('Protección de rutas privadas', () => {
         );
 
         expect(
-            screen.getByRole('heading', { name: 'Iniciar sesión' }),
+            await screen.findByRole('heading', {
+                name: 'Iniciar sesión',
+            }),
         ).toBeInTheDocument();
 
         expect(
-            screen.queryByRole('heading', { name: 'Panel principal' }),
+            screen.queryByRole('heading', {
+                name: 'Panel principal',
+            }),
         ).not.toBeInTheDocument();
     });
 });

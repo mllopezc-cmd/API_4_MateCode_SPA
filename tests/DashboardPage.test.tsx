@@ -4,6 +4,55 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../src/App';
 import type { Task } from '../src/types/task';
 
+import type { ReactNode } from 'react';
+import type {
+    User,
+    UserCredential,
+} from 'firebase/auth';
+import type { AuthContextType } from '../src/context/AuthContext';
+
+vi.mock('../src/context/AuthProvider', async () => {
+    const React = await import('react');
+    const { AuthContext } = await import(
+        '../src/context/AuthContext'
+    );
+
+    function TestAuthProvider({
+        children,
+    }: {
+        children: ReactNode;
+    }) {
+        const testUser = {
+            uid: 'test-user',
+            email: 'test@example.com',
+            emailVerified: true,
+            displayName: 'Usuario de prueba',
+        } as User;
+
+        const value: AuthContextType = {
+            status: 'authenticated',
+            user: testUser,
+            error: null,
+            isAuthenticated: true,
+            login: vi.fn().mockResolvedValue({
+                user: testUser,
+            } as UserCredential),
+            logout: vi.fn().mockResolvedValue(undefined),
+            sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
+            refreshUser: vi.fn().mockResolvedValue(undefined),
+            retryInitialization: vi.fn(),
+        };
+
+        return React.createElement(
+            AuthContext.Provider,
+            { value },
+            children,
+        );
+    }
+
+    return { AuthProvider: TestAuthProvider };
+});
+
 afterEach(() => {
     vi.restoreAllMocks();
 });
@@ -12,15 +61,10 @@ const STORAGE_KEY = 'matecode-tasks';
 
 function renderDashboard() {
     render(
-        <MemoryRouter initialEntries={['/iniciar-sesion']}>
+        <MemoryRouter initialEntries={['/panel']}>
             <AppRoutes />
         </MemoryRouter>,
     );
-
-    fireEvent.click(
-        screen.getByRole('button', { name: 'Simular inicio de sesión' }),
-    );
-
 }
 
 function createTask(
