@@ -1,5 +1,11 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import {
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+    within,
+} from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../src/App';
 import type { Task } from '../src/types/task';
@@ -10,6 +16,10 @@ import type {
     UserCredential,
 } from 'firebase/auth';
 import type { AuthContextType } from '../src/context/AuthContext';
+
+const { mockLogout } = vi.hoisted(() => ({
+    mockLogout: vi.fn(),
+}));
 
 vi.mock('../src/context/AuthProvider', async () => {
     const React = await import('react');
@@ -37,7 +47,7 @@ vi.mock('../src/context/AuthProvider', async () => {
             login: vi.fn().mockResolvedValue({
                 user: testUser,
             } as UserCredential),
-            logout: vi.fn().mockResolvedValue(undefined),
+            logout: mockLogout,
             sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
             refreshUser: vi.fn().mockResolvedValue(undefined),
             retryInitialization: vi.fn(),
@@ -59,9 +69,20 @@ afterEach(() => {
 
 const STORAGE_KEY = 'matecode-tasks';
 
+function CurrentPath() {
+    const location = useLocation();
+
+    return (
+        <output data-testid="current-path">
+            {location.pathname}
+        </output>
+    );
+}
+
 function renderDashboard() {
     render(
         <MemoryRouter initialEntries={['/panel']}>
+            <CurrentPath />
             <AppRoutes />
         </MemoryRouter>,
     );
@@ -88,6 +109,8 @@ function createTask(
 describe('Panel principal de MateCode', () => {
     beforeEach(() => {
         localStorage.clear();
+        mockLogout.mockReset();
+        mockLogout.mockResolvedValue(undefined);
     });
 
     it('muestra todos los contadores en cero cuando no hay tareas', () => {
@@ -209,6 +232,82 @@ describe('Panel principal de MateCode', () => {
             .filter((link) => !navigationLinks.has(link));
 
         expect(taskLinks).toHaveLength(5);
+    });
+
+    it('espera el cierre de sesión, deshabilita el botón y navega al completarse', async () => {
+        let resolveLogout!: () => void;
+
+        mockLogout.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveLogout = resolve;
+                }),
+        );
+
+        renderDashboard();
+
+        const logoutButton = screen.getByRole('button', {
+            name: 'Cerrar sesión',
+        });
+
+        fireEvent.click(logoutButton);
+
+        expect(mockLogout).toHaveBeenCalledOnce();
+        expect(logoutButton).toBeDisabled();
+        expect(logoutButton).toHaveTextContent('Cerrando sesión');
+
+        expect(screen.getByTestId('current-path')).toHaveTextContent(
+            '/panel',
+        );
+
+        resolveLogout();
+
+        await waitFor(() => {
+            expect(screen.getByTestId('current-path')).toHaveTextContent(
+                '/iniciar-sesion',
+            );
+        });
+    });
+
+    it('muestra un error accesible y permite reintentar si falla el cierre de sesión', async () => {
+        mockLogout.mockRejectedValueOnce(
+            new Error('Firebase logout failed'),
+        );
+
+        renderDashboard();
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Cerrar sesión',
+            }),
+        );
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'No se pudo cerrar la sesión. Inténtalo de nuevo.',
+        );
+
+        expect(screen.getByTestId('current-path')).toHaveTextContent(
+            '/panel',
+        );
+
+        const logoutButton = screen.getByRole('button', {
+            name: 'Cerrar sesión',
+        });
+
+        await waitFor(() => {
+            expect(logoutButton).toBeEnabled();
+        });
+
+        expect(mockLogout).toHaveBeenCalledOnce();
+
+        fireEvent.click(logoutButton);
+
+        await waitFor(() => {
+            expect(mockLogout).toHaveBeenCalledTimes(2);
+            expect(screen.getByTestId('current-path')).toHaveTextContent(
+                '/iniciar-sesion',
+            );
+        });
     });
 
     it('muestra las tareas completadas con fecha aunque no haya tareas pendientes con fecha', () => {

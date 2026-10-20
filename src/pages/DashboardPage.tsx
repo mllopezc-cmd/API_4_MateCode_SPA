@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAllTasks } from '../services/taskService';
@@ -19,6 +19,11 @@ function getEffectiveStatusLabel(task: Task): string {
 export default function DashboardPage() {
     const { logout } = useAuth();
     const navigate = useNavigate();
+
+    const logoutInProgressRef = useRef(false);
+
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
+    const [logoutError, setLogoutError] = useState<string | null>(null);
 
     const [tasksState, setTasksState] = useState(() => {
         try {
@@ -58,8 +63,27 @@ export default function DashboardPage() {
         })
         .slice(0, 5);
 
-    function handleLogout() {
-        logout();
+    async function handleLogout() {
+        if (logoutInProgressRef.current) {
+            return;
+        }
+
+        logoutInProgressRef.current = true;
+        setIsLoggingOut(true);
+        setLogoutError(null);
+
+        try {
+            await logout();
+        } catch {
+            logoutInProgressRef.current = false;
+
+            setLogoutError(
+                'No se pudo cerrar la sesión. Inténtalo de nuevo.',
+            );
+            setIsLoggingOut(false);
+            return;
+        }
+
         navigate('/iniciar-sesion', { replace: true });
     }
 
@@ -244,8 +268,18 @@ export default function DashboardPage() {
                 </>
             )}
 
-            <button type="button" onClick={handleLogout}>
-                Cerrar sesión
+            {logoutError && (
+                <p className="task-error" role="alert">
+                    {logoutError}
+                </p>
+            )}
+
+            <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+            >
+                {isLoggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
             </button>
         </main>
     );
