@@ -1,47 +1,78 @@
-# MateCode
+# MateCode SPA
 
-MateCode es una aplicación web en desarrollo orientada a organizar tareas y facilitar el trabajo de programación.
+MateCode es una aplicación web para organizar tareas y facilitar el trabajo de programación. Está desarrollada con React y TypeScript, utiliza React Router para la navegación, Firebase Authentication para la autenticación de usuarios y Cloud Firestore para la persistencia de tareas.
 
-## Estado del proyecto
+## Estado actual
 
-Actualmente, el proyecto cuenta con la estructura inicial de React, TypeScript y Vite, además de una configuración básica para pruebas automatizadas.
+El proyecto incluye:
+
+- Interfaz web desarrollada con React, TypeScript y Vite.
+- Rutas públicas y protegidas.
+- Autenticación con Firebase y verificación del correo electrónico.
+- Persistencia de tareas en Cloud Firestore.
+- Reglas de seguridad para proteger los datos de cada usuario.
+- Pruebas automatizadas de componentes, servicios y reglas de Firestore.
+- Carga diferida de determinadas páginas para reducir el tamaño del paquete inicial.
 
 ## Tecnologías
 
-- React
+- React y React DOM
 - TypeScript
 - Vite
+- React Router
+- Firebase Authentication
+- Cloud Firestore
 - Vitest
 - React Testing Library
-- jsdom
 - ESLint
 
 ## Requisitos previos
 
-- Node.js
-- npm
+- Node.js `^20.19.0` o `>=22.12.0`.
+- npm.
+- Un proyecto de Firebase con Authentication y Cloud Firestore configurados.
+- Firebase CLI para ejecutar las pruebas de las reglas mediante el emulador.
 
 ## Instalación
 
-Clona o descarga el proyecto y accede a su carpeta raíz.
-
-Instala las dependencias:
+Clona el repositorio e ingresa en su directorio:
 
 ```bash
+git clone https://github.com/mllopezc-cmd/API_4_MateCode_SPA.git
+cd API_4_MateCode_SPA
 npm install
 ```
 
+Crea el archivo `.env.local` en la raíz del proyecto, tomando `.env.example` como referencia. Configura las variables de Firebase correspondientes a tu entorno.
+
+No subas `.env.local` ni otros archivos que contengan credenciales privadas al repositorio.
+
+## Variables de entorno
+
+| Variable | Uso |
+|---|---|
+| `VITE_FIREBASE_API_KEY` | Clave de configuración del cliente Firebase |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Dominio de autenticación |
+| `VITE_FIREBASE_PROJECT_ID` | Identificador del proyecto Firebase |
+| `VITE_FIREBASE_APP_ID` | Identificador de la aplicación Firebase |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Bucket de Firebase Storage, si se utiliza |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Identificador del remitente de mensajería, si se utiliza |
+
+Utiliza los valores correspondientes al proyecto de Firebase autorizado para tu entorno.
+
+Las variables con el prefijo `VITE_` quedan disponibles en el código del cliente. No deben contener credenciales privadas ni secretos de servidor. La configuración del cliente no sustituye las reglas de seguridad de Firebase.
+
 ## Desarrollo local
 
-Inicia el servidor:
+Inicia el servidor de desarrollo:
 
 ```bash
 npm run dev
 ```
 
-Vite mostrará la dirección local donde puedes abrir la aplicación.
+Vite mostrará en la terminal la dirección local desde la que puedes abrir la aplicación.
 
-## Pruebas
+## Pruebas y validaciones
 
 Ejecuta las pruebas automatizadas:
 
@@ -49,32 +80,64 @@ Ejecuta las pruebas automatizadas:
 npm test
 ```
 
-## Análisis de código
-
-Ejecuta ESLint:
+Ejecuta ESLint para comprobar la calidad estática del código:
 
 ```bash
 npm run lint
 ```
 
-## Compilación de producción
-
-Comprueba los tipos de TypeScript y genera la compilación:
+Comprueba los tipos de TypeScript y genera la compilación de producción:
 
 ```bash
 npm run build
 ```
 
-Los archivos de producción se generan en la carpeta `dist/`.
+Los archivos de producción se generan en el directorio `dist/`.
 
-## Plan de desarrollo
+### Pruebas de las reglas de Firestore
 
-Las siguientes etapas contemplan la construcción de la interfaz, la separación entre frontend y backend, la autenticación, la persistencia de datos y el despliegue.
+Las pruebas de seguridad requieren Firebase CLI y el emulador de Firestore. Ejecútalas con:
 
-Las integraciones con Firebase, AWS SES y Vercel se configurarán en sus etapas específicas.
+```bash
+firebase emulators:exec --only firestore "npm run test:rules"
+```
 
-## Seguridad
+Antes de entregar cambios, ejecuta las validaciones pertinentes y revisa `git diff` y `git status`. No consideres un cambio terminado hasta comprobar que no introduce regresiones.
 
-No se deben subir credenciales, tokens ni archivos `.env` al repositorio.
+## Estructura del proyecto
 
-Los archivos de ejemplo pueden documentar los nombres de las variables necesarias, pero nunca deben contener secretos reales.
+```text
+src/
+├── components/   Componentes reutilizables
+├── context/      Contexto y estado de autenticación
+├── lib/          Configuración e inicialización de Firebase
+├── pages/        Páginas de la aplicación
+├── services/     Operaciones de autenticación y tareas
+├── types/        Tipos compartidos de TypeScript
+└── utils/        Funciones auxiliares
+
+tests/             Pruebas automatizadas de la aplicación
+rules-tests/       Pruebas de reglas de Firestore
+docs/              Documentación técnica y guía de colaboración
+```
+
+La estructura anterior es orientativa. Consulta la [guía de arquitectura](docs/ARQUITECTURA.md) para conocer las responsabilidades de los módulos, sus límites y los principales flujos de la aplicación.
+
+## Enlaces del proyecto
+
+- Repositorio: [API_4_MateCode_SPA en GitHub](https://github.com/mllopezc-cmd/API_4_MateCode_SPA)
+- Despliegue en Vercel: pendiente de confirmar la URL pública.
+
+## Seguridad y colaboración
+
+- No publiques archivos `.env.local`, tokens ni credenciales privadas.
+- No debilites las reglas de Firestore para hacer pasar una prueba.
+- No confíes en la interfaz como única barrera de acceso: los datos deben estar protegidos también por las reglas de seguridad de Firestore.
+- No elimines ni desactives pruebas para ocultar regresiones.
+- No cambies contratos, servicios o flujos existentes sin revisar sus dependencias y pruebas.
+- Revisa los cambios antes de confirmarlos en Git.
+
+## Documentación adicional
+
+- [Arquitectura del proyecto](docs/ARQUITECTURA.md)
+- [Guía de trabajo con IA](docs/GUIA_TRABAJO_CON_IA.md)

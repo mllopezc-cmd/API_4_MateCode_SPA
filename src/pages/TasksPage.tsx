@@ -1,21 +1,22 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import type {
+    CreateTaskInput,
     Task,
     TaskPriority,
     TaskStatus,
 } from '../types/task';
 import {
+    createFirestoreTask,
+    deleteFirestoreTask,
+    getAllFirestoreTasks,
+    updateFirestoreTask,
+} from '../services/firestoreTaskService';
+import {
     getAutomaticPriority,
     getDueDateStatus,
 } from '../utils/taskScheduling';
-import {
-    addTask,
-    changeTaskStatus,
-    deleteTask,
-    getAllTasks,
-    updateTask,
-} from '../services/taskService';
 import { formatCalendarDate } from '../utils/dateFormatting';
 
 const TASK_ROUTES = [
@@ -90,49 +91,33 @@ function getTaskStatusMessage(task: Task): string {
     return task.dueDate
         ? `Estado: ${statusMessage}${dueStatusMessage} · Fecha límite: ${formatCalendarDate(task.dueDate)}`
         : `Estado: ${statusMessage}`;
+
 }
 
-function getErrorMessage(
-    error: unknown,
-    fallback: string,
-): string {
+function getErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
-}
-
-interface InitialTasksState {
-    tasks: Task[];
-    error: string;
-}
-
-function getInitialTasksState(): InitialTasksState {
-    try {
-        return {
-            tasks: getAllTasks(),
-            error: '',
-        };
-    } catch (caughtError) {
-        return {
-            tasks: [],
-            error: getErrorMessage(
-                caughtError,
-                'No se pudieron cargar las tareas.',
-            ),
-        };
-    }
 }
 
 export default function TasksPage() {
     const location = useLocation();
     const navigate = useNavigate();
+    const { status, user } = useAuth();
 
-    const [initialTasksState] = useState<InitialTasksState>(
-        getInitialTasksState,
-    );
+    const isAuthenticated =
+        status === 'authenticated' &&
+        Boolean(user?.uid) &&
+        user?.emailVerified === true;
 
-    const [tasks, setTasks] = useState<Task[]>(initialTasksState.tasks);
-    const [tasksLoadFailed, setTasksLoadFailed] = useState(
-        Boolean(initialTasksState.error),
-    );
+    const userId = isAuthenticated ? user!.uid : '';
+
+    const sessionUserIdRef = useRef(userId);
+    const mountedRef = useRef(false);
+    const loadRequestRef = useRef(0);
+
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+    const [tasksLoadFailed, setTasksLoadFailed] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [form, setForm] = useState<TaskForm>({ ...EMPTY_FORM });
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -141,7 +126,7 @@ export default function TasksPage() {
     const [priorityFilter, setPriorityFilter] =
         useState<PriorityFilter>('todas');
 
-    const [error, setError] = useState(initialTasksState.error);
+    const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
     const startDateError =
@@ -149,12 +134,11 @@ export default function TasksPage() {
             ? error
             : '';
 
-    const dueDateError =
-        error.includes(
-            'La fecha límite debe ser igual o posterior a la fecha de inicio.',
-        )
-            ? error
-            : '';
+    const dueDateError = error.includes(
+        'La fecha límite debe ser igual o posterior a la fecha de inicio.',
+    )
+        ? error
+        : '';
 
     const currentRoute = TASK_ROUTES.find(
         (route) => route.path === location.pathname,
@@ -181,46 +165,172 @@ export default function TasksPage() {
     const hasActiveFilters =
         statusFilter !== 'todas' || priorityFilter !== 'todas';
 
-    /**
-     * Recarga las tareas.
-     *
-     * Si la lectura falla, se oculta la lista anterior para evitar
-     * presentar datos potencialmente desactualizados como actuales.
-     * operationSuccessMessage permite comunicar que la escritura
-     * terminó correctamente aunque haya fallado la recarga posterior.
-     */
-    function refreshTasks(operationSuccessMessage?: string): boolean {
+    useEffect(() => {
+        mountedRef.current = true;
+
+        return () => {
+            mountedRef.current = false;
+            loadRequestRef.current += 1;
+        };
+    }, []);
+
+    useEffect(() => {
+        sessionUserIdRef.current = userId;
+    }, [userId]);
+
+    useEffect(() => {
+        let active = true;
+        const requestId = ++loadRequestRef.current;
+
+        const canApplyResult = () =>
+            active &&
+            mountedRef.current &&
+            loadRequestRef.current === requestId &&
+            sessionUserIdRef.current === userId;
+
+        async function initializeTasks() {
+            // Diferir las actualizaciones iniciales fuera de la ejecución
+            // síncrona del efecto.
+            await Promise.resolve();
+
+            if (!active) {
+                return;
+            }
+
+            if (status === 'loading') {
+                setTasks([]);
+                setIsLoadingTasks(true);
+                setTasksLoadFailed(false);
+                setError('');
+                setSuccess('');
+                return;
+            }
+
+            if (!isAuthenticated || !userId) {
+                setTasks([]);
+                setIsLoadingTasks(false);
+                setTasksLoadFailed(false);
+
+                if (status === 'error') {
+                    setError(
+                        'No se pudo comprobar tu sesión. Intenta volver a iniciar sesión.',
+                    );
+                } else {
+                    setError('');
+                }
+
+                setSuccess('');
+                return;
+            }
+
+            setTasks([]);
+            setIsLoadingTasks(true);
+            setTasksLoadFailed(false);
+            setError('');
+            setSuccess('');
+
+            try {
+                const loadedTasks = await getAllFirestoreTasks();
+
+                if (!canApplyResult()) {
+                    return;
+                }
+
+                setTasks(loadedTasks);
+                setTasksLoadFailed(false);
+                setError('');
+            } catch (caughtError) {
+                if (!canApplyResult()) {
+                    return;
+                }
+
+                setTasks([]);
+                setTasksLoadFailed(true);
+                setError(
+                    `${getErrorMessage(
+                        caughtError,
+                        'No se pudieron cargar las tareas.',
+                    )} Puedes volver a intentarlo con el botón para recargar las tareas.`,
+                );
+            } finally {
+                if (canApplyResult()) {
+                    setIsLoadingTasks(false);
+                }
+            }
+        }
+
+        void initializeTasks();
+
+        return () => {
+            active = false;
+        };
+    }, [isAuthenticated, status, userId]);
+
+    async function refreshTasks(
+        expectedUserId = userId,
+    ): Promise<boolean> {
+        if (
+            !expectedUserId ||
+            sessionUserIdRef.current !== expectedUserId
+        ) {
+            return false;
+        }
+
+        const requestId = ++loadRequestRef.current;
+
         try {
-            const refreshedTasks = getAllTasks();
+            const refreshedTasks = await getAllFirestoreTasks();
+
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== expectedUserId ||
+                loadRequestRef.current !== requestId
+            ) {
+                return false;
+            }
 
             setTasks(refreshedTasks);
             setTasksLoadFailed(false);
+            setIsLoadingTasks(false);
             setError('');
 
             return true;
         } catch (caughtError) {
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== expectedUserId ||
+                loadRequestRef.current !== requestId
+            ) {
+                return false;
+            }
+
             const loadError = getErrorMessage(
                 caughtError,
                 'No se pudieron actualizar las tareas.',
             );
 
+            setTasks([]);
             setTasksLoadFailed(true);
-
+            setIsLoadingTasks(false);
             setError(
-                operationSuccessMessage
-                    ? `${operationSuccessMessage} Sin embargo, no se pudo actualizar la lista de tareas. La lista anterior se ha ocultado para evitar mostrar información desactualizada. ${loadError}`
-                    : `${loadError} Puedes volver a intentarlo con el botón para recargar las tareas.`,
+                `${loadError} Puedes volver a intentarlo con el botón para recargar las tareas.`,
             );
 
             return false;
         }
     }
 
-    function handleRetryLoad() {
+    async function handleRetryLoad() {
+        if (!isAuthenticated || !userId || isSubmitting) {
+            return;
+        }
+
         setError('');
         setSuccess('');
+        setIsLoadingTasks(true);
+        setTasksLoadFailed(false);
 
-        refreshTasks();
+        await refreshTasks(userId);
     }
 
     function resetForm() {
@@ -230,54 +340,115 @@ export default function TasksPage() {
         setSuccess('');
     }
 
-    function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+
+        if (!isAuthenticated || !userId || isSubmitting) {
+            return;
+        }
+
         setError('');
         setSuccess('');
 
+        // Obtener la fecha actual en UTC, igual que el mapper y Firestore.
+        const todayString = new Date().toISOString().slice(0, 10);
+
+        // La fecha de inicio debe ser hoy o una fecha futura.
+        if (form.startDate && form.startDate < todayString) {
+            setError('La fecha de inicio debe ser hoy o una fecha futura.');
+            return;
+        }
+
+        // La fecha límite no puede ser anterior a la fecha de inicio.
+        if (
+            form.startDate &&
+            form.dueDate &&
+            form.dueDate < form.startDate
+        ) {
+            setError(
+                'La fecha límite debe ser igual o posterior a la fecha de inicio.',
+            );
+            return;
+        }
+
+        setIsSubmitting(true);
+
+        const operationUserId = userId;
         const taskId = editingTaskId;
 
         try {
-            const input = {
+            const input: CreateTaskInput = {
                 title: form.title,
                 description: form.description,
                 startDate: form.startDate || null,
                 dueDate: form.dueDate || null,
             };
 
-            if (taskId !== null) {
-                const updatedTask = updateTask(taskId, input);
+            const savedTask =
+                taskId !== null
+                    ? await updateFirestoreTask(taskId, input)
+                    : await createFirestoreTask(input);
 
-                if (!updatedTask) {
-                    setError('No se encontró la tarea que deseas editar.');
-                    return;
-                }
-            } else {
-                addTask(input);
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== operationUserId
+            ) {
+                return;
             }
 
+            setTasks((currentTasks) => {
+                if (taskId !== null) {
+                    return currentTasks.map((task) =>
+                        task.id === savedTask.id ? savedTask : task,
+                    );
+                }
+
+                return [
+                    savedTask,
+                    ...currentTasks.filter(
+                        (task) => task.id !== savedTask.id,
+                    ),
+                ];
+            });
+
+            setTasksLoadFailed(false);
             setForm({ ...EMPTY_FORM });
             setEditingTaskId(null);
 
-            const operationSuccessMessage =
+            setSuccess(
                 taskId !== null
                     ? 'La tarea se actualizó correctamente.'
-                    : 'La tarea se creó correctamente.';
-
-            if (refreshTasks(operationSuccessMessage)) {
-                setSuccess(operationSuccessMessage);
-            }
+                    : 'La tarea se creó correctamente.',
+            );
         } catch (caughtError) {
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== operationUserId
+            ) {
+                return;
+            }
+
             setError(
                 getErrorMessage(
                     caughtError,
                     'No se pudo guardar la tarea.',
                 ),
             );
+        } finally {
+            if (
+                mountedRef.current &&
+                sessionUserIdRef.current === operationUserId
+            ) {
+                setIsSubmitting(false);
+            }
         }
     }
 
     function handleEdit(task: Task) {
+        if (isSubmitting) {
+            return;
+        }
+
         setEditingTaskId(task.id);
         setForm({
             title: task.title,
@@ -293,7 +464,7 @@ export default function TasksPage() {
     }
 
     function handleRestoreEditingValues() {
-        if (editingTaskId === null) {
+        if (editingTaskId === null || isSubmitting) {
             return;
         }
 
@@ -317,36 +488,69 @@ export default function TasksPage() {
         setSuccess('');
     }
 
-    function handleStatusChange(id: string, status: TaskStatus) {
+    async function handleStatusChange(
+        id: string,
+        taskStatus: TaskStatus,
+    ) {
+        if (!isAuthenticated || !userId || isSubmitting) {
+            return;
+        }
+
         setError('');
         setSuccess('');
+        setIsSubmitting(true);
+
+        const operationUserId = userId;
 
         try {
-            const updatedTask = changeTaskStatus(id, status);
+            const updatedTask = await updateFirestoreTask(
+                id,
+                { status: taskStatus },
+            );
 
-            if (!updatedTask) {
-                setError(
-                    'No se encontró la tarea cuyo estado deseas actualizar.',
-                );
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== operationUserId
+            ) {
                 return;
             }
 
-            const operationSuccessMessage = STATUS_MESSAGES[status];
+            setTasks((currentTasks) =>
+                currentTasks.map((task) =>
+                    task.id === updatedTask.id ? updatedTask : task,
+                ),
+            );
 
-            if (refreshTasks(operationSuccessMessage)) {
-                setSuccess(operationSuccessMessage);
-            }
+            setSuccess(STATUS_MESSAGES[taskStatus]);
         } catch (caughtError) {
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== operationUserId
+            ) {
+                return;
+            }
+
             setError(
                 getErrorMessage(
                     caughtError,
                     'No se pudo actualizar el estado de la tarea.',
                 ),
             );
+        } finally {
+            if (
+                mountedRef.current &&
+                sessionUserIdRef.current === operationUserId
+            ) {
+                setIsSubmitting(false);
+            }
         }
     }
 
-    function handleDelete(task: Task) {
+    async function handleDelete(task: Task) {
+        if (!isAuthenticated || !userId || isSubmitting) {
+            return;
+        }
+
         const confirmed = window.confirm(
             `¿Seguro que deseas eliminar la tarea "${task.title}"? Esta acción no se puede deshacer.`,
         );
@@ -357,14 +561,17 @@ export default function TasksPage() {
 
         setError('');
         setSuccess('');
+        setIsSubmitting(true);
+
+        const operationUserId = userId;
 
         try {
-            const deleted = deleteTask(task.id);
+            await deleteFirestoreTask(task.id);
 
-            if (!deleted) {
-                setError(
-                    'No se pudo eliminar la tarea porque ya no existe.',
-                );
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== operationUserId
+            ) {
                 return;
             }
 
@@ -373,19 +580,36 @@ export default function TasksPage() {
                 setEditingTaskId(null);
             }
 
-            const operationSuccessMessage =
-                `La tarea "${task.title}" se eliminó correctamente.`;
+            setTasks((currentTasks) =>
+                currentTasks.filter(
+                    (currentTask) => currentTask.id !== task.id,
+                ),
+            );
 
-            if (refreshTasks(operationSuccessMessage)) {
-                setSuccess(operationSuccessMessage);
-            }
+            setSuccess(
+                `La tarea "${task.title}" se eliminó correctamente.`,
+            );
         } catch (caughtError) {
+            if (
+                !mountedRef.current ||
+                sessionUserIdRef.current !== operationUserId
+            ) {
+                return;
+            }
+
             setError(
                 getErrorMessage(
                     caughtError,
                     'Ocurrió un error al intentar eliminar la tarea.',
                 ),
             );
+        } finally {
+            if (
+                mountedRef.current &&
+                sessionUserIdRef.current === operationUserId
+            ) {
+                setIsSubmitting(false);
+            }
         }
     }
 
@@ -457,6 +681,7 @@ export default function TasksPage() {
                             }
                             placeholder="Ej. Estudiar TypeScript"
                             required
+                            disabled={isSubmitting}
                         />
                     </div>
 
@@ -477,6 +702,7 @@ export default function TasksPage() {
                             }
                             placeholder="Añade detalles de la tarea"
                             rows={3}
+                            disabled={isSubmitting}
                         />
                     </div>
 
@@ -502,6 +728,7 @@ export default function TasksPage() {
                                     ? 'task-start-date-help task-start-date-error'
                                     : 'task-start-date-help'
                             }
+                            disabled={isSubmitting}
                         />
 
                         <p id="task-start-date-help">
@@ -539,6 +766,7 @@ export default function TasksPage() {
                             aria-describedby={
                                 dueDateError ? 'task-due-date-error' : undefined
                             }
+                            disabled={isSubmitting}
                         />
 
                         {dueDateError && (
@@ -552,10 +780,20 @@ export default function TasksPage() {
                     </div>
 
                     <div className="task-form-actions">
-                        <button type="submit">
-                            {editingTaskId !== null
-                                ? 'Guardar cambios'
-                                : 'Crear tarea'}
+                        <button
+                            type="submit"
+                            disabled={
+                                isSubmitting ||
+                                isLoadingTasks ||
+                                !isAuthenticated ||
+                                tasksLoadFailed
+                            }
+                        >
+                            {isSubmitting
+                                ? 'Guardando...'
+                                : editingTaskId !== null
+                                    ? 'Guardar cambios'
+                                    : 'Crear tarea'}
                         </button>
 
                         {editingTaskId !== null && (
@@ -564,6 +802,7 @@ export default function TasksPage() {
                                     type="button"
                                     className="task-button-secondary"
                                     onClick={handleRestoreEditingValues}
+                                    disabled={isSubmitting}
                                 >
                                     Restablecer cambios
                                 </button>
@@ -572,6 +811,7 @@ export default function TasksPage() {
                                     type="button"
                                     className="task-button-secondary"
                                     onClick={resetForm}
+                                    disabled={isSubmitting}
                                 >
                                     Cancelar edición
                                 </button>
@@ -650,7 +890,13 @@ export default function TasksPage() {
                     </button>
                 )}
 
-                {tasksLoadFailed ? (
+                {isLoadingTasks ? (
+                    <div className="task-empty" role="status" aria-live="polite">
+                        <p className="task-empty-title">
+                            Cargando tareas...
+                        </p>
+                    </div>
+                ) : tasksLoadFailed ? (
                     <div className="task-empty">
                         <p className="task-empty-title">
                             No se pudo cargar la lista de tareas
@@ -664,6 +910,7 @@ export default function TasksPage() {
                         <button
                             type="button"
                             onClick={handleRetryLoad}
+                            disabled={isSubmitting || !isAuthenticated}
                         >
                             Reintentar carga
                         </button>
@@ -748,7 +995,8 @@ export default function TasksPage() {
                                             <div className="task-card-metadata">
                                                 {task.startDate && (
                                                     <p className="task-card-start-date">
-                                                        Inicio planificado: {formatCalendarDate(task.startDate)}
+                                                        Inicio planificado:{' '}
+                                                        {formatCalendarDate(task.startDate)}
                                                     </p>
                                                 )}
 
@@ -764,6 +1012,7 @@ export default function TasksPage() {
                                                     type="button"
                                                     className="task-button-secondary"
                                                     onClick={() => handleEdit(task)}
+                                                    disabled={isSubmitting}
                                                 >
                                                     Editar
                                                 </button>
@@ -776,12 +1025,13 @@ export default function TasksPage() {
                                                     <select
                                                         id={`task-status-${task.id}`}
                                                         value={task.status}
-                                                        onChange={(event) =>
-                                                            handleStatusChange(
+                                                        onChange={(event) => {
+                                                            void handleStatusChange(
                                                                 task.id,
                                                                 event.target.value as TaskStatus,
-                                                            )
-                                                        }
+                                                            );
+                                                        }}
+                                                        disabled={isSubmitting}
                                                     >
                                                         <option value="pendiente">
                                                             Pendiente
@@ -799,7 +1049,10 @@ export default function TasksPage() {
                                                     type="button"
                                                     className="task-button-danger"
                                                     aria-label={`Eliminar ${task.title}`}
-                                                    onClick={() => handleDelete(task)}
+                                                    onClick={() => {
+                                                        void handleDelete(task);
+                                                    }}
+                                                    disabled={isSubmitting}
                                                 >
                                                     Eliminar
                                                 </button>

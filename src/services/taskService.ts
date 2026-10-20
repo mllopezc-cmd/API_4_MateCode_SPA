@@ -18,6 +18,12 @@ const VALID_STATUSES: TaskStatus[] = [
     'en_progreso',
     'completada',
 ];
+const MAX_TITLE_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 5000;
+
+const ALLOWED_TASK_TEXT = /^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ .,;:!?¿¡"()/_+#%&@-]+$/u;
+const TASK_TEXT_CONTENT = /[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]/u;
+
 
 function isValidDate(value: string): boolean {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -64,7 +70,17 @@ function validateTitle(value: string): string {
         throw new Error('El título de la tarea es obligatorio.');
     }
 
-    if (title.length < 3 || !/[\p{L}\p{N}]/u.test(title)) {
+    if (title.length > MAX_TITLE_LENGTH) {
+        throw new Error(
+            'El título debe tener entre 3 y 200 caracteres y contener letras o números.',
+        );
+    }
+
+    if (
+        title.length < 3 ||
+        !ALLOWED_TASK_TEXT.test(title) ||
+        !TASK_TEXT_CONTENT.test(title)
+    ) {
         throw new Error(
             'El título debe tener al menos 3 caracteres y contener una letra o número.',
         );
@@ -84,7 +100,15 @@ function validateDescription(value: string | undefined): string {
         throw new Error('La descripción no puede contener solo espacios.');
     }
 
-    if (description.length < 3 || !/[\p{L}\p{N}]/u.test(description)) {
+    if (description.length > MAX_DESCRIPTION_LENGTH) {
+        throw new Error('La descripción no tiene un formato válido.');
+    }
+
+    if (
+        description.length < 3 ||
+        !ALLOWED_TASK_TEXT.test(description) ||
+        !TASK_TEXT_CONTENT.test(description)
+    ) {
         throw new Error(
             'La descripción debe tener al menos 3 caracteres y contener una letra o número.',
         );

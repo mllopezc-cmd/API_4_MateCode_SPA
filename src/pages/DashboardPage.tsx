@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getAllTasks } from '../services/taskService';
+import { getAllFirestoreTasks } from '../services/firestoreTaskService';
 import type { Task } from '../types/task';
 import { getDueDateStatus } from '../utils/taskScheduling';
 import { formatCalendarDate } from '../utils/dateFormatting';
@@ -17,29 +17,88 @@ function getEffectiveStatusLabel(task: Task): string {
 }
 
 export default function DashboardPage() {
-    const { logout } = useAuth();
+    const { status, user, logout } = useAuth();
     const navigate = useNavigate();
 
     const logoutInProgressRef = useRef(false);
+    const loadRequestRef = useRef(0);
 
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const [logoutError, setLogoutError] = useState<string | null>(null);
 
-    const [tasksState, setTasksState] = useState(() => {
-        try {
-            return {
-                tasks: getAllTasks(),
-                hasError: false,
-            };
-        } catch {
-            return {
-                tasks: [] as Task[],
-                hasError: true,
-            };
-        }
-    });
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
+    const [isRetrying, setIsRetrying] = useState(false);
 
-    const { tasks, hasError } = tasksState;
+    const userId = user?.uid;
+    const isAuthenticated =
+        status === 'authenticated' &&
+        Boolean(userId) &&
+        user?.emailVerified === true;
+
+    const loadTasks = useCallback(
+        async (isRetry = false) => {
+            // Diferir la inicialización de estado fuera de la ejecución
+            // síncrona del efecto que inicia la carga.
+            await Promise.resolve();
+
+            const requestId = ++loadRequestRef.current;
+
+            if (!isAuthenticated) {
+                setTasks([]);
+                setHasError(false);
+                setIsLoading(status === 'loading');
+                setIsRetrying(false);
+                return;
+            }
+
+            setHasError(false);
+            setIsLoading(true);
+
+            if (isRetry) {
+                setIsRetrying(true);
+            }
+
+            try {
+                const loadedTasks = await getAllFirestoreTasks();
+
+                if (requestId !== loadRequestRef.current) {
+                    return;
+                }
+
+                setTasks(loadedTasks);
+                setHasError(false);
+            } catch {
+                if (requestId !== loadRequestRef.current) {
+                    return;
+                }
+
+                // No conservar datos anteriores si la recarga falla.
+                setTasks([]);
+                setHasError(true);
+            } finally {
+                if (requestId === loadRequestRef.current) {
+                    setIsLoading(false);
+                    setIsRetrying(false);
+                }
+            }
+        },
+        [isAuthenticated, status],
+    );
+
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            void loadTasks();
+        }, 0);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+
+            // Invalidar solicitudes anteriores al limpiar el efecto.
+            loadRequestRef.current += 1;
+        };
+    }, [loadTasks, userId, user?.emailVerified]);
 
     const pendingCount = tasks.filter(
         (task) => task.status === 'pendiente',
@@ -88,19 +147,11 @@ export default function DashboardPage() {
     }
 
     function handleRetryLoad() {
-        try {
-            const refreshedTasks = getAllTasks();
-
-            setTasksState({
-                tasks: refreshedTasks,
-                hasError: false,
-            });
-        } catch {
-            setTasksState({
-                tasks: [],
-                hasError: true,
-            });
+        if (isRetrying || isLoading) {
+            return;
         }
+
+        void loadTasks(true);
     }
 
     function renderTaskLink(task: Task) {
@@ -148,19 +199,43 @@ export default function DashboardPage() {
             <h1>Panel principal</h1>
             <p>Bienvenido a tu espacio de trabajo de MateCode.</p>
 
-            {hasError ? (
+            {status === 'loading' ? (
+                <section aria-live="polite" aria-busy="true">
+                    <p>Cargando tu sesión…</p>
+                </section>
+            ) : !isAuthenticated ? (
+                <section aria-labelledby="dashboard-auth-heading">
+                    <h2 id="dashboard-auth-heading">
+                        Verifica tu acceso
+                    </h2>
+                    <p>
+                        Para consultar tus tareas, inicia sesión con una
+                        cuenta cuyo correo electrónico esté verificado.
+                    </p>
+                    <Link to="/iniciar-sesion">Iniciar sesión</Link>
+                </section>
+            ) : isLoading ? (
+                <section aria-live="polite" aria-busy="true">
+                    <h2>Cargando tus tareas</h2>
+                    <p>Estamos consultando tus tareas en la nube…</p>
+                </section>
+            ) : hasError ? (
                 <section aria-labelledby="dashboard-load-error-heading">
                     <h2 id="dashboard-load-error-heading">
                         No se pudieron cargar las tareas
                     </h2>
 
                     <p className="task-error" role="alert">
-                        No se pudieron cargar las tareas. Comprueba el
-                        almacenamiento del navegador e inténtalo de nuevo.
+                        No se pudieron cargar tus tareas desde Firestore.
+                        Comprueba tu conexión e inténtalo de nuevo.
                     </p>
 
-                    <button type="button" onClick={handleRetryLoad}>
-                        Reintentar carga
+                    <button
+                        type="button"
+                        onClick={handleRetryLoad}
+                        disabled={isRetrying}
+                    >
+                        {isRetrying ? 'Reintentando…' : 'Reintentar carga'}
                     </button>
                 </section>
             ) : (
@@ -217,7 +292,7 @@ export default function DashboardPage() {
                             </div>
                         ) : upcomingTasks.length === 0 ? (
                             <p className="dashboard-empty">
-                                No tienes tareas pendientes con fecha límite.
+                                No tienes tareas con fecha límite.
                             </p>
                         ) : (
                             <ul className="dashboard-upcoming-list">

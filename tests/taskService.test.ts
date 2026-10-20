@@ -201,14 +201,22 @@ describe('Operaciones CRUD de tareas', () => {
         expect(getAllTasks()).toHaveLength(1);
     });
 
-    it('rechaza títulos demasiado cortos o sin letras ni números', () => {
-        expect(() => createTask({ title: 'AB' })).toThrow(
-            'El título debe tener al menos 3 caracteres y contener una letra o número.',
+    it('rechaza títulos que superan los 200 caracteres al crear y actualizar', () => {
+        expect(() =>
+            createTask({ title: 'A'.repeat(201) }),
+        ).toThrow(
+            'El título debe tener entre 3 y 200 caracteres y contener letras o números.',
         );
 
-        expect(() => createTask({ title: '!!!' })).toThrow(
-            'El título debe tener al menos 3 caracteres y contener una letra o número.',
+        const task = addTask({ title: 'Tarea original' });
+
+        expect(() =>
+            updateTask(task.id, { title: 'A'.repeat(201) }),
+        ).toThrow(
+            'El título debe tener entre 3 y 200 caracteres y contener letras o números.',
         );
+
+        expect(getAllTasks()[0]?.title).toBe('Tarea original');
     });
 
     it('rechaza títulos inválidos sin modificar una tarea existente', () => {
@@ -248,6 +256,28 @@ describe('Operaciones CRUD de tareas', () => {
         ).toThrow(
             'La descripción debe tener al menos 3 caracteres y contener una letra o número.',
         );
+    });
+
+    it('rechaza descripciones que superan los 5000 caracteres al crear y actualizar', () => {
+        expect(() =>
+            createTask({
+                title: 'Tarea válida',
+                description: 'A'.repeat(5001),
+            }),
+        ).toThrow('La descripción no tiene un formato válido.');
+
+        const task = addTask({
+            title: 'Tarea original',
+            description: 'Descripción válida',
+        });
+
+        expect(() =>
+            updateTask(task.id, {
+                description: 'A'.repeat(5001),
+            }),
+        ).toThrow('La descripción no tiene un formato válido.');
+
+        expect(getAllTasks()[0]?.description).toBe('Descripción válida');
     });
 
     it('permite una descripción vacía y limpia espacios exteriores', () => {

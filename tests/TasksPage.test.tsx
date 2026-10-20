@@ -1,21 +1,51 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+    within,
+} from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import TasksPage from '../src/pages/TasksPage';
-import * as taskService from '../src/services/taskService';
+import type { Task } from '../src/types/task';
 import { formatCalendarDate } from '../src/utils/dateFormatting';
 
-afterEach(() => {
-    vi.restoreAllMocks();
-});
+const { authState, firestoreMocks } = vi.hoisted(() => ({
+    authState: {
+        status: 'authenticated' as
+            | 'loading'
+            | 'unauthenticated'
+            | 'email-unverified'
+            | 'authenticated'
+            | 'error',
+        user: {
+            uid: 'test-user-123',
+            email: 'test@example.com',
+            emailVerified: true,
+        },
+        error: null as Error | null,
+    },
+    firestoreMocks: {
+        createFirestoreTask: vi.fn(),
+        deleteFirestoreTask: vi.fn(),
+        getAllFirestoreTasks: vi.fn(),
+        updateFirestoreTask: vi.fn(),
+    },
+}));
 
-function renderTasksPage(path = '/tareas') {
-    return render(
-        <MemoryRouter initialEntries={[path]}>
-            <TasksPage />
-        </MemoryRouter>,
-    );
-}
+vi.mock('../src/context/AuthContext', () => ({
+    useAuth: () => authState,
+}));
+
+vi.mock('../src/services/firestoreTaskService', () => ({
+    createFirestoreTask: firestoreMocks.createFirestoreTask,
+    deleteFirestoreTask: firestoreMocks.deleteFirestoreTask,
+    getAllFirestoreTasks: firestoreMocks.getAllFirestoreTasks,
+    updateFirestoreTask: firestoreMocks.updateFirestoreTask,
+}));
+
+let storedTasks: Task[];
 
 function getDateInDays(daysFromToday: number): string {
     const date = new Date();
@@ -28,12 +58,113 @@ function getDateInDays(daysFromToday: number): string {
     return `${year}-${month}-${day}`;
 }
 
-describe('Interfaz de gestión de tareas', () => {
-    beforeEach(() => {
-        localStorage.clear();
-    });
+function createTask(overrides: Partial<Task> = {}): Task {
+    const now = new Date().toISOString();
 
-    it('muestra el formulario y el mensaje cuando no hay tareas', () => {
+    return {
+        id: `task-${Math.random().toString(36).slice(2)}`,
+        title: 'Tarea de prueba',
+        description: '',
+        status: 'pendiente',
+        createdAt: now,
+        updatedAt: now,
+        startDate: null,
+        dueDate: null,
+        ...overrides,
+    };
+}
+
+function renderTasksPage(path = '/tareas') {
+    return render(
+        <MemoryRouter initialEntries={[path]}>
+            <TasksPage />
+        </MemoryRouter>,
+    );
+}
+
+function fillTitle(title: string) {
+    fireEvent.change(screen.getByLabelText('Título *'), {
+        target: { value: title },
+    });
+}
+
+async function submitNewTask(title: string) {
+    fillTitle(title);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+
+    await waitFor(() => {
+        expect(firestoreMocks.createFirestoreTask).toHaveBeenCalled();
+    });
+}
+
+beforeEach(() => {
+    storedTasks = [];
+
+    authState.status = 'authenticated';
+    authState.user = {
+        uid: 'test-user-123',
+        email: 'test@example.com',
+        emailVerified: true,
+    };
+    authState.error = null;
+
+    vi.clearAllMocks();
+
+    firestoreMocks.getAllFirestoreTasks.mockImplementation(async () =>
+        storedTasks.map((task) => ({ ...task })),
+    );
+
+    firestoreMocks.createFirestoreTask.mockImplementation(
+        async (input: Partial<Task>) => {
+            const task = createTask({
+                title: input.title ?? '',
+                description: input.description ?? '',
+                status: input.status ?? 'pendiente',
+                startDate: input.startDate ?? null,
+                dueDate: input.dueDate ?? null,
+            });
+
+            storedTasks.push(task);
+            return { ...task };
+        },
+    );
+
+    firestoreMocks.updateFirestoreTask.mockImplementation(
+        async (taskId: string, patch: Partial<Task>) => {
+            const index = storedTasks.findIndex(
+                (task) => task.id === taskId,
+            );
+
+            if (index < 0) {
+                throw new Error('La tarea no existe.');
+            }
+
+            storedTasks[index] = {
+                ...storedTasks[index],
+                ...patch,
+                updatedAt: new Date().toISOString(),
+            };
+
+            return { ...storedTasks[index] };
+        },
+    );
+
+    firestoreMocks.deleteFirestoreTask.mockImplementation(
+        async (taskId: string) => {
+            storedTasks = storedTasks.filter(
+                (task) => task.id !== taskId,
+            );
+        },
+    );
+});
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
+
+describe('Interfaz de gestión de tareas', () => {
+    it('muestra el formulario y el mensaje cuando no hay tareas', async () => {
         renderTasksPage();
 
         expect(
@@ -41,18 +172,20 @@ describe('Interfaz de gestión de tareas', () => {
         ).toBeInTheDocument();
 
         expect(
-            screen.getByText(/Todavía no tienes tareas/),
+            await screen.findByText('Todavía no tienes tareas'),
         ).toBeInTheDocument();
+
+        expect(screen.getByText('0 tareas encontradas')).toBeInTheDocument();
     });
 
-    it('no confunde un fallo de lectura inicial con una lista vacía', () => {
-        vi.spyOn(taskService, 'getAllTasks').mockImplementation(() => {
-            throw new Error('Fallo de lectura simulado.');
-        });
+    it('no confunde un fallo de lectura inicial con una lista vacía', async () => {
+        firestoreMocks.getAllFirestoreTasks.mockRejectedValueOnce(
+            new Error('Fallo de lectura simulado.'),
+        );
 
         renderTasksPage();
 
-        expect(screen.getByRole('alert')).toHaveTextContent(
+        expect(await screen.findByRole('alert')).toHaveTextContent(
             'Fallo de lectura simulado.',
         );
 
@@ -69,19 +202,14 @@ describe('Interfaz de gestión de tareas', () => {
         ).toBeInTheDocument();
     });
 
-    it('recupera la lista cuando se reintenta una lectura fallida', () => {
-        const getAllTasksOriginal = taskService.getAllTasks;
-
-        const getAllTasksSpy = vi
-            .spyOn(taskService, 'getAllTasks')
-            .mockImplementationOnce(() => {
-                throw new Error('Fallo temporal de lectura.');
-            })
-            .mockImplementationOnce(() => getAllTasksOriginal());
+    it('recupera la lista cuando se reintenta una lectura fallida', async () => {
+        firestoreMocks.getAllFirestoreTasks
+            .mockRejectedValueOnce(new Error('Fallo temporal de lectura.'))
+            .mockResolvedValueOnce([]);
 
         renderTasksPage();
 
-        expect(screen.getByRole('alert')).toHaveTextContent(
+        expect(await screen.findByRole('alert')).toHaveTextContent(
             'Fallo temporal de lectura.',
         );
 
@@ -89,79 +217,70 @@ describe('Interfaz de gestión de tareas', () => {
             screen.getByRole('button', { name: 'Reintentar carga' }),
         );
 
-        expect(getAllTasksSpy).toHaveBeenCalledTimes(2);
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(screen.getByText('0 tareas encontradas')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(
+                screen.queryByRole('alert'),
+            ).not.toBeInTheDocument();
+        });
+
+        expect(
+            screen.getByText('0 tareas encontradas'),
+        ).toBeInTheDocument();
+
         expect(
             screen.getByText('Todavía no tienes tareas'),
         ).toBeInTheDocument();
+
+        expect(
+            firestoreMocks.getAllFirestoreTasks,
+        ).toHaveBeenCalledTimes(2);
     });
 
-    it('informa de una escritura exitosa cuando falla la recarga posterior', () => {
-        const getAllTasksOriginal = taskService.getAllTasks;
-
-        vi.spyOn(taskService, 'getAllTasks')
-            .mockImplementationOnce(() => getAllTasksOriginal())
-            .mockImplementationOnce(() => {
-                throw new Error('Fallo de recarga simulado.');
-            });
+    it('muestra un error cuando falla la carga inicial y permite reintentar', async () => {
+        firestoreMocks.getAllFirestoreTasks
+            .mockRejectedValueOnce(new Error('Fallo de recarga simulado.'))
+            .mockResolvedValueOnce([]);
 
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea guardada sin recarga' },
-        });
-
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
-
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'La tarea se creó correctamente.',
-        );
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'no se pudo actualizar la lista de tareas',
-        );
-        expect(screen.getByRole('alert')).toHaveTextContent(
+        expect(await screen.findByRole('alert')).toHaveTextContent(
             'Fallo de recarga simulado.',
         );
 
         expect(
-            screen.queryByRole('heading', {
-                name: 'Tarea guardada sin recarga',
-            }),
-        ).not.toBeInTheDocument();
+            screen.getByText('No se pudo cargar la lista de tareas'),
+        ).toBeInTheDocument();
 
-        expect(
-            screen.queryByText('0 tareas encontradas'),
-        ).not.toBeInTheDocument();
-
-        expect(localStorage.getItem('matecode-tasks')).toContain(
-            'Tarea guardada sin recarga',
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Reintentar carga' }),
         );
 
         expect(
-            screen.getByRole('button', { name: 'Reintentar carga' }),
+            await screen.findByText('Todavía no tienes tareas'),
         ).toBeInTheDocument();
     });
 
-    it('no comunica éxito cuando falla la escritura de una tarea', () => {
-        vi.spyOn(taskService, 'addTask').mockImplementation(() => {
-            throw new Error('Fallo de escritura simulado.');
-        });
+    it('no comunica éxito cuando falla la escritura de una tarea', async () => {
+        firestoreMocks.createFirestoreTask.mockRejectedValueOnce(
+            new Error('Fallo de escritura simulado.'),
+        );
 
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea que no se guardó' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fillTitle('Tarea que no se guardó');
 
-        expect(screen.getByRole('alert')).toHaveTextContent(
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
             'Fallo de escritura simulado.',
         );
 
         expect(
-            screen.queryByRole('status'),
+            screen.queryByText('La tarea se creó correctamente.'),
         ).not.toBeInTheDocument();
 
         expect(
@@ -171,128 +290,158 @@ describe('Interfaz de gestión de tareas', () => {
         ).not.toBeInTheDocument();
     });
 
-    it('crea una tarea y la muestra en el listado', () => {
+    it('crea una tarea y la muestra en el listado', async () => {
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Estudiar React' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
 
-        fireEvent.change(screen.getByLabelText('Descripción (opcional)'), {
-            target: { value: 'Repasar componentes' },
-        });
+        fillTitle('Estudiar React');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fireEvent.change(
+            screen.getByLabelText('Descripción (opcional)'),
+            {
+                target: { value: 'Repasar componentes' },
+            },
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
 
         expect(
-            screen.getByRole('heading', { name: 'Estudiar React' }),
+            await screen.findByRole('heading', {
+                name: 'Estudiar React',
+            }),
         ).toBeInTheDocument();
 
-        expect(screen.getByText('Repasar componentes')).toBeInTheDocument();
-        expect(localStorage.getItem('matecode-tasks')).toContain('Estudiar React');
+        expect(
+            screen.getByText('Repasar componentes'),
+        ).toBeInTheDocument();
+
+        expect(
+            firestoreMocks.createFirestoreTask,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title: 'Estudiar React',
+                description: 'Repasar componentes',
+            }),
+        );
     });
 
-    it('crea una tarea con fecha de inicio y fecha límite válidas', () => {
+    it('crea una tarea con fechas de inicio y límite válidas', async () => {
         renderTasksPage();
+
+        await screen.findByText('Todavía no tienes tareas');
 
         const startDate = getDateInDays(1);
         const dueDate = getDateInDays(5);
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea planificada' },
-        });
+        fillTitle('Tarea planificada');
 
         fireEvent.change(
-            screen.getByLabelText('Fecha de inicio planificada (opcional)'),
-            {
-                target: { value: startDate },
-            },
+            screen.getByLabelText(
+                'Fecha de inicio planificada (opcional)',
+            ),
+            { target: { value: startDate } },
         );
 
-        fireEvent.change(screen.getByLabelText(/fecha límite/i), {
-            target: { value: dueDate },
-        });
+        fireEvent.change(
+            screen.getByLabelText(/fecha límite/i),
+            { target: { value: dueDate } },
+        );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
 
         expect(
-            screen.getByText(
+            await screen.findByText(
                 `Inicio planificado: ${formatCalendarDate(startDate)}`,
             ),
         ).toBeInTheDocument();
 
-        const storedTasks = JSON.parse(
-            localStorage.getItem('matecode-tasks') ?? '[]',
-        ) as Array<{ startDate: string | null; dueDate: string | null }>;
-
-        expect(storedTasks[0]?.startDate).toBe(startDate);
-        expect(storedTasks[0]?.dueDate).toBe(dueDate);
+        expect(
+            firestoreMocks.createFirestoreTask,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title: 'Tarea planificada',
+                startDate,
+                dueDate,
+            }),
+        );
     });
 
-    it('rechaza una fecha de inicio pasada al crear una tarea', () => {
+    it('rechaza una fecha de inicio pasada al crear una tarea', async () => {
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea con inicio pasado' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
+
+        fillTitle('Tarea con inicio pasado');
 
         fireEvent.change(
-            screen.getByLabelText('Fecha de inicio planificada (opcional)'),
-            {
-                target: { value: getDateInDays(-1) },
-            },
+            screen.getByLabelText(
+                'Fecha de inicio planificada (opcional)',
+            ),
+            { target: { value: getDateInDays(-1) } },
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
 
-        expect(screen.getByRole('alert')).toHaveTextContent(
+        expect(await screen.findByRole('alert')).toHaveTextContent(
             'La fecha de inicio debe ser hoy o una fecha futura.',
         );
 
         expect(
-            screen.queryByRole('heading', { name: 'Tarea con inicio pasado' }),
-        ).not.toBeInTheDocument();
+            firestoreMocks.createFirestoreTask,
+        ).not.toHaveBeenCalled();
     });
 
-    it('rechaza una fecha límite anterior a la fecha de inicio', () => {
+    it('rechaza una fecha límite anterior a la fecha de inicio', async () => {
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea con fechas incompatibles' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
+
+        fillTitle('Tarea con fechas incompatibles');
 
         fireEvent.change(
-            screen.getByLabelText('Fecha de inicio planificada (opcional)'),
-            {
-                target: { value: getDateInDays(5) },
-            },
+            screen.getByLabelText(
+                'Fecha de inicio planificada (opcional)',
+            ),
+            { target: { value: getDateInDays(5) } },
         );
 
-        fireEvent.change(screen.getByLabelText(/fecha límite/i), {
-            target: { value: getDateInDays(2) },
-        });
+        fireEvent.change(
+            screen.getByLabelText(/fecha límite/i),
+            { target: { value: getDateInDays(2) } },
+        );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
 
-        expect(screen.getByRole('alert')).toHaveTextContent(
+        expect(await screen.findByRole('alert')).toHaveTextContent(
             'La fecha límite debe ser igual o posterior a la fecha de inicio.',
         );
 
         expect(
-            screen.queryByRole('heading', {
-                name: 'Tarea con fechas incompatibles',
-            }),
-        ).not.toBeInTheDocument();
+            firestoreMocks.createFirestoreTask,
+        ).not.toHaveBeenCalled();
     });
 
-    it('permite editar una tarea existente', () => {
+    it('permite editar una tarea existente', async () => {
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea original' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fillTitle('Tarea original');
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
+
+        await screen.findByRole('heading', { name: 'Tarea original' });
 
         fireEvent.click(
             screen.getByRole('button', { name: /^Editar$/ }),
@@ -302,37 +451,56 @@ describe('Interfaz de gestión de tareas', () => {
             target: { value: 'Tarea modificada' },
         });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar cambios' }),
+        );
 
         expect(
-            screen.getByRole('heading', { name: 'Tarea modificada' }),
+            await screen.findByRole('heading', {
+                name: 'Tarea modificada',
+            }),
         ).toBeInTheDocument();
 
         expect(
             screen.queryByRole('heading', { name: 'Tarea original' }),
         ).not.toBeInTheDocument();
+
+        expect(
+            firestoreMocks.updateFirestoreTask,
+        ).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ title: 'Tarea modificada' }),
+        );
     });
 
-    it('permite editar la fecha de inicio de una tarea existente', () => {
+    it('permite editar la fecha de inicio de una tarea existente', async () => {
         renderTasksPage();
+
+        await screen.findByText('Todavía no tienes tareas');
 
         const originalStartDate = getDateInDays(1);
         const updatedStartDate = getDateInDays(2);
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea para reprogramar' },
-        });
+        fillTitle('Tarea para reprogramar');
 
         fireEvent.change(
-            screen.getByLabelText('Fecha de inicio planificada (opcional)'),
-            {
-                target: { value: originalStartDate },
-            },
+            screen.getByLabelText(
+                'Fecha de inicio planificada (opcional)',
+            ),
+            { target: { value: originalStartDate } },
         );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
 
-        fireEvent.click(screen.getByRole('button', { name: /^Editar$/ }));
+        await screen.findByRole('heading', {
+            name: 'Tarea para reprogramar',
+        });
+
+        fireEvent.click(
+            screen.getByRole('button', { name: /^Editar$/ }),
+        );
 
         const startDateInput = screen.getByLabelText(
             'Fecha de inicio planificada (opcional)',
@@ -349,71 +517,92 @@ describe('Interfaz de gestión de tareas', () => {
         );
 
         expect(
-            screen.getByText(
+            await screen.findByText(
                 `Inicio planificado: ${formatCalendarDate(updatedStartDate)}`,
             ),
         ).toBeInTheDocument();
 
-        const storedTasks = JSON.parse(
-            localStorage.getItem('matecode-tasks') ?? '[]',
-        ) as Array<{ startDate: string | null }>;
-
-        expect(storedTasks[0]?.startDate).toBe(updatedStartDate);
+        expect(
+            firestoreMocks.updateFirestoreTask,
+        ).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                startDate: updatedStartDate,
+            }),
+        );
     });
 
-    it('permite marcar una tarea como completada', () => {
+    it('permite marcar una tarea como completada', async () => {
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea de prueba' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fillTitle('Tarea de prueba');
 
-        fireEvent.change(
-            screen.getByRole('combobox', {
-                name: 'Estado de la tarea',
-            }),
-            {
-                target: { value: 'completada' },
-            },
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
         );
 
-        expect(
-            screen.getByText('Estado: Completada'),
-        ).toBeInTheDocument();
+        const taskArticle = await screen.findByRole('article', {
+            name: 'Tarea: Tarea de prueba',
+        });
+
+        fireEvent.change(
+            within(taskArticle).getByRole('combobox', {
+                name: 'Estado de la tarea',
+            }),
+            { target: { value: 'completada' } },
+        );
+
+        await waitFor(() => {
+            expect(
+                firestoreMocks.updateFirestoreTask,
+            ).toHaveBeenCalledWith(
+                expect.any(String),
+                { status: 'completada' },
+            );
+        });
 
         expect(
-            screen.queryByRole('button', { name: 'Marcar como completada' }),
-        ).not.toBeInTheDocument();
+            await screen.findByText('Estado: Completada'),
+        ).toBeInTheDocument();
     });
 
-    it('filtra tareas por prioridad automática', () => {
+    it('filtra tareas por prioridad automática', async () => {
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea urgente' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
 
-        fireEvent.change(screen.getByLabelText(/fecha límite/i), {
-            target: { value: getDateInDays(3) },
-        });
+        fillTitle('Tarea urgente');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fireEvent.change(
+            screen.getByLabelText(/fecha límite/i),
+            { target: { value: getDateInDays(3) } },
+        );
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea normal' },
-        });
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
 
-        fireEvent.change(screen.getByLabelText(/fecha límite/i), {
-            target: { value: getDateInDays(8) },
-        });
+        await screen.findByRole('heading', { name: 'Tarea urgente' });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fillTitle('Tarea normal');
 
-        fireEvent.change(screen.getByLabelText('Filtrar por prioridad'), {
-            target: { value: 'alta' },
-        });
+        fireEvent.change(
+            screen.getByLabelText(/fecha límite/i),
+            { target: { value: getDateInDays(8) } },
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
+
+        await screen.findByRole('heading', { name: 'Tarea normal' });
+
+        fireEvent.change(
+            screen.getByLabelText('Filtrar por prioridad'),
+            { target: { value: 'alta' } },
+        );
 
         expect(
             screen.getByRole('heading', { name: 'Tarea urgente' }),
@@ -424,28 +613,40 @@ describe('Interfaz de gestión de tareas', () => {
         ).not.toBeInTheDocument();
     });
 
-    it('combina los filtros de estado y prioridad correctamente', () => {
+    it('combina los filtros de estado y prioridad correctamente', async () => {
         renderTasksPage();
+
+        await screen.findByText('Todavía no tienes tareas');
 
         const dueDate = getDateInDays(8);
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea pendiente media' },
-        });
-        fireEvent.change(screen.getByLabelText(/fecha límite/i), {
-            target: { value: dueDate },
-        });
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fillTitle('Tarea pendiente media');
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea en progreso media' },
-        });
-        fireEvent.change(screen.getByLabelText(/fecha límite/i), {
-            target: { value: dueDate },
-        });
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        fireEvent.change(
+            screen.getByLabelText(/fecha límite/i),
+            { target: { value: dueDate } },
+        );
 
-        const inProgressTask = screen.getByRole('article', {
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
+
+        await screen.findByRole('heading', {
+            name: 'Tarea pendiente media',
+        });
+
+        fillTitle('Tarea en progreso media');
+
+        fireEvent.change(
+            screen.getByLabelText(/fecha límite/i),
+            { target: { value: dueDate } },
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
+
+        const inProgressTask = await screen.findByRole('article', {
             name: 'Tarea: Tarea en progreso media',
         });
 
@@ -456,16 +657,27 @@ describe('Interfaz de gestión de tareas', () => {
             { target: { value: 'en_progreso' } },
         );
 
-        fireEvent.change(screen.getByLabelText('Filtrar por estado'), {
-            target: { value: 'en_progreso' },
+        await waitFor(() => {
+            expect(
+                firestoreMocks.updateFirestoreTask,
+            ).toHaveBeenCalledWith(
+                expect.any(String),
+                { status: 'en_progreso' },
+            );
         });
 
-        fireEvent.change(screen.getByLabelText('Filtrar por prioridad'), {
-            target: { value: 'media' },
-        });
+        fireEvent.change(
+            screen.getByLabelText('Filtrar por estado'),
+            { target: { value: 'en_progreso' } },
+        );
+
+        fireEvent.change(
+            screen.getByLabelText('Filtrar por prioridad'),
+            { target: { value: 'media' } },
+        );
 
         expect(
-            screen.getByRole('heading', {
+            await screen.findByRole('heading', {
                 name: 'Tarea en progreso media',
             }),
         ).toBeInTheDocument();
@@ -476,24 +688,28 @@ describe('Interfaz de gestión de tareas', () => {
             }),
         ).not.toBeInTheDocument();
 
-        expect(screen.getByText('1 tarea encontrada')).toBeInTheDocument();
+        expect(
+            screen.getByText('1 tarea encontrada'),
+        ).toBeInTheDocument();
     });
 
-    it('solicita confirmación antes de eliminar una tarea', () => {
+    it('solicita confirmación antes de eliminar una tarea', async () => {
         const confirmSpy = vi
             .spyOn(window, 'confirm')
             .mockReturnValue(false);
 
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea protegida' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        await submitNewTask('Tarea protegida');
+
+        await screen.findByRole('heading', { name: 'Tarea protegida' });
 
         fireEvent.click(
-            screen.getByRole('button', { name: 'Eliminar Tarea protegida' }),
+            screen.getByRole('button', {
+                name: 'Eliminar Tarea protegida',
+            }),
         );
 
         expect(confirmSpy).toHaveBeenCalledOnce();
@@ -502,66 +718,106 @@ describe('Interfaz de gestión de tareas', () => {
             screen.getByRole('heading', { name: 'Tarea protegida' }),
         ).toBeInTheDocument();
 
-        confirmSpy.mockRestore();
+        expect(
+            firestoreMocks.deleteFirestoreTask,
+        ).not.toHaveBeenCalled();
     });
 
-    it('elimina la tarea cuando se confirma la acción', () => {
+    it('elimina la tarea cuando se confirma la acción', async () => {
         vi.spyOn(window, 'confirm').mockReturnValue(true);
 
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea para eliminar' },
-        });
+        await screen.findByText('Todavía no tienes tareas');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        await submitNewTask('Tarea para eliminar');
+
+        await screen.findByRole('heading', {
+            name: 'Tarea para eliminar',
+        });
 
         fireEvent.click(
-            screen.getByRole('button', { name: 'Eliminar Tarea para eliminar' }),
+            screen.getByRole('button', {
+                name: 'Eliminar Tarea para eliminar',
+            }),
         );
 
-        expect(
-            screen.queryByRole('heading', { name: 'Tarea para eliminar' }),
-        ).not.toBeInTheDocument();
-
-        expect(localStorage.getItem('matecode-tasks')).not.toContain(
-            'Tarea para eliminar',
-        );
-    });
-
-    it('recupera las tareas guardadas al montar la página nuevamente', () => {
-        const firstRender = renderTasksPage();
-
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea persistente' },
+        await waitFor(() => {
+            expect(
+                firestoreMocks.deleteFirestoreTask,
+            ).toHaveBeenCalledWith(expect.any(String));
         });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
-
-        firstRender.unmount();
-        renderTasksPage();
+        await waitFor(() => {
+            expect(
+                screen.queryByRole('heading', {
+                    name: 'Tarea para eliminar',
+                }),
+            ).not.toBeInTheDocument();
+        });
 
         expect(
-            screen.getByRole('heading', { name: 'Tarea persistente' }),
+            screen.getByText('Todavía no tienes tareas'),
         ).toBeInTheDocument();
     });
 
-    it('muestra el estado vacío de los filtros y permite restablecerlos', () => {
+    it('vuelve a cargar las tareas de Firestore al montar la página nuevamente', async () => {
+        storedTasks = [
+            createTask({
+                id: 'persisted-task',
+                title: 'Tarea persistente',
+            }),
+        ];
+
+        const firstRender = renderTasksPage();
+
+        expect(
+            await screen.findByRole('heading', {
+                name: 'Tarea persistente',
+            }),
+        ).toBeInTheDocument();
+
+        firstRender.unmount();
+
         renderTasksPage();
 
-        fireEvent.change(screen.getByLabelText('Título *'), {
-            target: { value: 'Tarea urgente' },
-        });
-        fireEvent.change(screen.getByLabelText(/fecha límite/i), {
-            target: { value: getDateInDays(3) },
-        });
-        fireEvent.click(screen.getByRole('button', { name: 'Crear tarea' }));
+        expect(
+            await screen.findByRole('heading', {
+                name: 'Tarea persistente',
+            }),
+        ).toBeInTheDocument();
 
-        fireEvent.change(screen.getByLabelText('Filtrar por prioridad'), {
-            target: { value: 'baja' },
-        });
+        expect(
+            firestoreMocks.getAllFirestoreTasks,
+        ).toHaveBeenCalledTimes(2);
+    });
 
-        expect(screen.getByText('0 tareas encontradas')).toBeInTheDocument();
+    it('muestra el estado vacío de los filtros y permite restablecerlos', async () => {
+        renderTasksPage();
+
+        await screen.findByText('Todavía no tienes tareas');
+
+        fillTitle('Tarea urgente');
+
+        fireEvent.change(
+            screen.getByLabelText(/fecha límite/i),
+            { target: { value: getDateInDays(3) } },
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Crear tarea' }),
+        );
+
+        await screen.findByRole('heading', { name: 'Tarea urgente' });
+
+        fireEvent.change(
+            screen.getByLabelText('Filtrar por prioridad'),
+            { target: { value: 'baja' } },
+        );
+
+        expect(
+            screen.getByText('0 tareas encontradas'),
+        ).toBeInTheDocument();
 
         expect(
             screen.getByText('No encontramos tareas'),
@@ -574,7 +830,9 @@ describe('Interfaz de gestión de tareas', () => {
         ).toBeInTheDocument();
 
         fireEvent.click(
-            screen.getByRole('button', { name: 'Restablecer filtros' }),
+            screen.getByRole('button', {
+                name: 'Restablecer filtros',
+            }),
         );
 
         expect(
@@ -589,6 +847,8 @@ describe('Interfaz de gestión de tareas', () => {
             screen.getByRole('heading', { name: 'Tarea urgente' }),
         ).toBeInTheDocument();
 
-        expect(screen.getByText('1 tarea encontrada')).toBeInTheDocument();
+        expect(
+            screen.getByText('1 tarea encontrada'),
+        ).toBeInTheDocument();
     });
 });

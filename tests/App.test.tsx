@@ -76,8 +76,35 @@ vi.mock('../src/context/AuthProvider', async () => {
     }
 
     return { AuthProvider: TestAuthProvider };
-
 });
+
+vi.mock('../src/services/firestoreTaskService', () => ({
+    createFirestoreTask: vi.fn().mockResolvedValue({
+        id: 'test-task',
+        title: 'Tarea de prueba',
+        description: '',
+        status: 'pendiente',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        startDate: null,
+        dueDate: null,
+    }),
+
+    getAllFirestoreTasks: vi.fn().mockResolvedValue([]),
+
+    updateFirestoreTask: vi.fn().mockResolvedValue({
+        id: 'test-task',
+        title: 'Tarea de prueba',
+        description: '',
+        status: 'pendiente',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        startDate: null,
+        dueDate: null,
+    }),
+
+    deleteFirestoreTask: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { AppRoutes } from '../src/App';
 
@@ -304,6 +331,22 @@ describe('Protección de rutas privadas', () => {
 
         await screen.findByRole('heading', {
             name: 'Panel principal',
+        });
+
+        // El mock de Firestore devuelve una lista vacía y evita
+        // depender de una conexión real para probar la navegación.
+        await waitFor(() => {
+            expect(
+                screen.queryByRole('heading', {
+                    name: 'Cargando tus tareas',
+                }),
+            ).not.toBeInTheDocument();
+
+            expect(
+                screen.queryByRole('heading', {
+                    name: 'No se pudieron cargar las tareas',
+                }),
+            ).not.toBeInTheDocument();
         });
 
         fireEvent.click(screen.getByRole('link', { name: 'Ayuda' }));

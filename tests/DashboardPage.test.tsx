@@ -1,4 +1,6 @@
 import {
+    act,
+    cleanup,
     fireEvent,
     render,
     screen,
@@ -6,123 +8,110 @@ import {
     within,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppRoutes } from '../src/App';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+import DashboardPage from '../src/pages/DashboardPage';
+import { useAuth } from '../src/context/AuthContext';
+import { getAllFirestoreTasks } from '../src/services/firestoreTaskService';
 import type { Task } from '../src/types/task';
-
-import type { ReactNode } from 'react';
-import type {
-    User,
-    UserCredential,
-} from 'firebase/auth';
-import type { AuthContextType } from '../src/context/AuthContext';
 
 const { mockLogout } = vi.hoisted(() => ({
     mockLogout: vi.fn(),
 }));
 
-vi.mock('../src/context/AuthProvider', async () => {
-    const React = await import('react');
-    const { AuthContext } = await import(
-        '../src/context/AuthContext'
-    );
+vi.mock('../src/context/AuthContext', () => ({
+    useAuth: vi.fn(),
+}));
 
-    function TestAuthProvider({
-        children,
-    }: {
-        children: ReactNode;
-    }) {
-        const testUser = {
-            uid: 'test-user',
-            email: 'test@example.com',
-            emailVerified: true,
-            displayName: 'Usuario de prueba',
-        } as User;
+vi.mock('../src/services/firestoreTaskService', () => ({
+    getAllFirestoreTasks: vi.fn(),
+}));
 
-        const value: AuthContextType = {
-            status: 'authenticated',
-            user: testUser,
-            error: null,
-            isAuthenticated: true,
-            login: vi.fn().mockResolvedValue({
-                user: testUser,
-            } as UserCredential),
-            logout: mockLogout,
-            sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
-            refreshUser: vi.fn().mockResolvedValue(undefined),
-            retryInitialization: vi.fn(),
-        };
+const mockUseAuth = vi.mocked(useAuth);
+const mockGetAllFirestoreTasks = vi.mocked(getAllFirestoreTasks);
 
-        return React.createElement(
-            AuthContext.Provider,
-            { value },
-            children,
-        );
-    }
+function createTask(overrides: Partial<Task> = {}): Task {
+    const now = new Date();
+    const today = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+    ].join('-');
 
-    return { AuthProvider: TestAuthProvider };
-});
+    return {
+        id: 'task-1',
+        title: 'Tarea de prueba',
+        description: 'Descripción de prueba',
+        status: 'pendiente',
+        createdAt: `${today}T09:00:00.000Z`,
+        updatedAt: `${today}T09:00:00.000Z`,
+        startDate: null,
+        dueDate: today,
+        ...overrides,
+    };
+}
 
-afterEach(() => {
-    vi.restoreAllMocks();
-});
-
-const STORAGE_KEY = 'matecode-tasks';
-
-function CurrentPath() {
+function LocationProbe() {
     const location = useLocation();
 
-    return (
-        <output data-testid="current-path">
-            {location.pathname}
-        </output>
-    );
+    return <output aria-label="Ruta actual">{location.pathname}</output>;
 }
 
 function renderDashboard() {
-    render(
+    return render(
         <MemoryRouter initialEntries={['/panel']}>
-            <CurrentPath />
-            <AppRoutes />
+            <LocationProbe />
+            <DashboardPage />
         </MemoryRouter>,
     );
 }
 
-function createTask(
-    id: string,
-    title: string,
-    status: Task['status'],
-    dueDate: string | null,
-): Task {
-    return {
-        id,
-        title,
-        description: '',
-        status,
-        createdAt: '2026-10-01T10:00:00.000Z',
-        updatedAt: '2026-10-01T10:00:00.000Z',
-        startDate: null,
-        dueDate,
-    };
+function setAuthenticatedUser() {
+    mockUseAuth.mockReturnValue({
+        status: 'authenticated',
+        user: {
+            uid: 'test-user',
+            emailVerified: true,
+        },
+        logout: mockLogout,
+    } as never);
 }
 
-describe('Panel principal de MateCode', () => {
+describe('DashboardPage', () => {
     beforeEach(() => {
-        localStorage.clear();
-        mockLogout.mockReset();
+        vi.clearAllMocks();
         mockLogout.mockResolvedValue(undefined);
+        setAuthenticatedUser();
+        mockGetAllFirestoreTasks.mockResolvedValue([]);
     });
 
-    it('muestra todos los contadores en cero cuando no hay tareas', () => {
+    afterEach(() => {
+        cleanup();
+    });
+
+    it('muestra los contadores en cero cuando no hay tareas', async () => {
         renderDashboard();
 
         expect(
-            screen.getByRole('heading', { name: 'Panel principal' }),
+            await screen.findByRole('heading', {
+                name: 'Resumen de tareas',
+            }),
         ).toBeInTheDocument();
 
         const summary = screen.getByRole('region', {
             name: 'Resumen de tareas',
         });
+
+        expect(summary).toHaveTextContent('Total de tareas');
+        expect(summary).toHaveTextContent('Pendientes');
+        expect(summary).toHaveTextContent('En progreso');
+        expect(summary).toHaveTextContent('Completadas');
 
         expect(summary).toHaveTextContent('Total de tareas0');
         expect(summary).toHaveTextContent('Pendientes0');
@@ -130,27 +119,23 @@ describe('Panel principal de MateCode', () => {
         expect(summary).toHaveTextContent('Completadas0');
 
         expect(
-            screen.getByText(/Aún no tienes tareas/),
-        ).toBeInTheDocument();
-
-        expect(
             screen.getByRole('link', { name: 'Crear mi primera tarea' }),
         ).toHaveAttribute('href', '/tareas');
+
+        expect(mockGetAllFirestoreTasks).toHaveBeenCalledTimes(1);
     });
 
-    it('calcula correctamente los contadores de tareas', () => {
-        const tasks = [
-            createTask('1', 'Tarea pendiente', 'pendiente', null),
-            createTask('2', 'Tarea en progreso', 'en_progreso', null),
-            createTask('3', 'Tarea completada', 'completada', null),
-            createTask('4', 'Otra tarea pendiente', 'pendiente', null),
-        ];
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    it('calcula correctamente los contadores por estado', async () => {
+        mockGetAllFirestoreTasks.mockResolvedValue([
+            createTask({ id: '1', status: 'pendiente' }),
+            createTask({ id: '2', status: 'pendiente' }),
+            createTask({ id: '3', status: 'en_progreso' }),
+            createTask({ id: '4', status: 'completada' }),
+        ]);
 
         renderDashboard();
 
-        const summary = screen.getByRole('region', {
+        const summary = await screen.findByRole('region', {
             name: 'Resumen de tareas',
         });
 
@@ -160,81 +145,119 @@ describe('Panel principal de MateCode', () => {
         expect(summary).toHaveTextContent('Completadas1');
     });
 
-    it('muestra las tareas con fecha límite ordenadas por proximidad, incluidas las completadas', () => {
-        const tasks = [
-            createTask('1', 'Tarea futura', 'pendiente', '2026-12-20'),
-            createTask('2', 'Tarea vencida', 'pendiente', '2026-09-10'),
-            createTask('3', 'Tarea en progreso', 'en_progreso', '2026-10-20'),
-            createTask('4', 'Tarea completada', 'completada', '2026-09-01'),
-            createTask('5', 'Tarea sin fecha', 'pendiente', null),
-        ];
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    it('ordena las próximas tareas por fecha límite, incluidas las completadas', async () => {
+        mockGetAllFirestoreTasks.mockResolvedValue([
+            createTask({
+                id: 'late',
+                title: 'Tarea posterior',
+                dueDate: '2099-12-20',
+            }),
+            createTask({
+                id: 'early',
+                title: 'Tarea anterior',
+                dueDate: '2099-12-01',
+            }),
+            createTask({
+                id: 'middle',
+                title: 'Tarea intermedia',
+                dueDate: '2099-12-10',
+                status: 'completada',
+            }),
+            createTask({
+                id: 'without-date',
+                title: 'Tarea sin fecha',
+                dueDate: null,
+            }),
+        ]);
 
         renderDashboard();
 
-        const upcomingSection = screen.getByRole('region', {
+        const upcomingHeading = await screen.findByRole('heading', {
             name: 'Próximas tareas',
         });
 
-        const navigation = within(upcomingSection).getByRole('navigation', {
-            name: 'Navegación del panel',
-        });
+        const upcomingSection = upcomingHeading.closest('section');
 
-        const navigationLinks = new Set(
-            within(navigation).getAllByRole('link'),
+        if (!upcomingSection) {
+            throw new Error('No se encontró la sección de próximas tareas');
+        }
+
+        const list = upcomingSection.querySelector<HTMLElement>(
+            '.dashboard-upcoming-list',
         );
 
-        const taskLinks = within(upcomingSection)
-            .getAllByRole('link')
-            .filter((link) => !navigationLinks.has(link));
+        if (!list) {
+            throw new Error('No se encontró la lista de próximas tareas');
+        }
 
-        const titles = taskLinks.map((link) => link.textContent);
+        const upcomingList = within(list);
 
-        expect(titles).toEqual([
-            'Tarea completada',
-            'Tarea vencida',
-            'Tarea en progreso',
-            'Tarea futura',
+        expect(
+            upcomingList.getByRole('link', { name: 'Tarea anterior' }),
+        ).toBeInTheDocument();
+
+        expect(
+            upcomingList.getByRole('link', { name: 'Tarea intermedia' }),
+        ).toBeInTheDocument();
+
+        expect(
+            upcomingList.getByRole('link', { name: 'Tarea posterior' }),
+        ).toBeInTheDocument();
+
+        expect(
+            upcomingList.queryByRole('link', { name: 'Tarea sin fecha' }),
+        ).not.toBeInTheDocument();
+
+        const taskLinks = Array.from(list.querySelectorAll('a')).map(
+            (link) => link.textContent,
+        );
+
+        expect(taskLinks).toEqual([
+            'Tarea anterior',
+            'Tarea intermedia',
+            'Tarea posterior',
         ]);
-
-        expect(titles).not.toContain('Tarea sin fecha');
     });
 
-    it('limita la lista de próximas tareas a cinco elementos', () => {
-        const tasks = Array.from({ length: 7 }, (_, index) =>
-            createTask(
-                String(index + 1),
-                `Tarea ${index + 1}`,
-                'pendiente',
-                `2026-11-${String(index + 1).padStart(2, '0')}`,
+    it('muestra como máximo cinco próximas tareas', async () => {
+        mockGetAllFirestoreTasks.mockResolvedValue(
+            Array.from({ length: 7 }, (_, index) =>
+                createTask({
+                    id: `task-${index + 1}`,
+                    title: `Tarea ${index + 1}`,
+                    dueDate: `2099-12-${String(index + 1).padStart(2, '0')}`,
+                }),
             ),
         );
 
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-
         renderDashboard();
 
-        const upcomingSection = screen.getByRole('region', {
+        expect(
+            await screen.findByRole('link', { name: 'Tarea 1' }),
+        ).toBeInTheDocument();
+
+        const upcomingHeading = screen.getByRole('heading', {
             name: 'Próximas tareas',
         });
 
-        const navigation = within(upcomingSection).getByRole('navigation', {
-            name: 'Navegación del panel',
-        });
+        const section = upcomingHeading.closest('section');
 
-        const navigationLinks = new Set(
-            within(navigation).getAllByRole('link'),
-        );
+        expect(section).not.toBeNull();
 
-        const taskLinks = within(upcomingSection)
-            .getAllByRole('link')
-            .filter((link) => !navigationLinks.has(link));
+        expect(
+            section!.querySelectorAll('.dashboard-upcoming-list li'),
+        ).toHaveLength(5);
 
-        expect(taskLinks).toHaveLength(5);
+        expect(
+            screen.queryByRole('link', { name: 'Tarea 6' }),
+        ).not.toBeInTheDocument();
+
+        expect(
+            screen.queryByRole('link', { name: 'Tarea 7' }),
+        ).not.toBeInTheDocument();
     });
 
-    it('espera el cierre de sesión, deshabilita el botón y navega al completarse', async () => {
+    it('cierra la sesión, deshabilita el botón durante la operación y navega al finalizar', async () => {
         let resolveLogout!: () => void;
 
         mockLogout.mockImplementation(
@@ -252,151 +275,174 @@ describe('Panel principal de MateCode', () => {
 
         fireEvent.click(logoutButton);
 
-        expect(mockLogout).toHaveBeenCalledOnce();
-        expect(logoutButton).toBeDisabled();
-        expect(logoutButton).toHaveTextContent('Cerrando sesión');
+        expect(
+            screen.getByRole('button', { name: 'Cerrando sesión…' }),
+        ).toBeDisabled();
 
-        expect(screen.getByTestId('current-path')).toHaveTextContent(
-            '/panel',
-        );
+        expect(mockLogout).toHaveBeenCalledTimes(1);
 
-        resolveLogout();
+        await act(async () => {
+            resolveLogout();
+        });
 
         await waitFor(() => {
-            expect(screen.getByTestId('current-path')).toHaveTextContent(
+            expect(screen.getByLabelText('Ruta actual')).toHaveTextContent(
                 '/iniciar-sesion',
             );
         });
     });
 
-    it('muestra un error accesible y permite reintentar si falla el cierre de sesión', async () => {
-        mockLogout.mockRejectedValueOnce(
-            new Error('Firebase logout failed'),
-        );
+    it('muestra un error accesible y permite reintentar el cierre de sesión', async () => {
+        mockLogout
+            .mockRejectedValueOnce(new Error('Fallo de cierre'))
+            .mockResolvedValueOnce(undefined);
 
         renderDashboard();
 
         fireEvent.click(
-            screen.getByRole('button', {
-                name: 'Cerrar sesión',
-            }),
+            screen.getByRole('button', { name: 'Cerrar sesión' }),
         );
 
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'No se pudo cerrar la sesión. Inténtalo de nuevo.',
         );
 
-        expect(screen.getByTestId('current-path')).toHaveTextContent(
-            '/panel',
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Cerrar sesión' }),
         );
-
-        const logoutButton = screen.getByRole('button', {
-            name: 'Cerrar sesión',
-        });
-
-        await waitFor(() => {
-            expect(logoutButton).toBeEnabled();
-        });
-
-        expect(mockLogout).toHaveBeenCalledOnce();
-
-        fireEvent.click(logoutButton);
 
         await waitFor(() => {
             expect(mockLogout).toHaveBeenCalledTimes(2);
-            expect(screen.getByTestId('current-path')).toHaveTextContent(
+        });
+
+        await waitFor(() => {
+            expect(screen.getByLabelText('Ruta actual')).toHaveTextContent(
                 '/iniciar-sesion',
             );
         });
     });
 
-    it('muestra las tareas completadas con fecha aunque no haya tareas pendientes con fecha', () => {
-        const tasks = [
-            createTask('1', 'Tarea sin fecha', 'pendiente', null),
-            createTask('2', 'Tarea terminada', 'completada', '2026-10-10'),
-        ];
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    it('muestra las tareas completadas con fecha límite', async () => {
+        mockGetAllFirestoreTasks.mockResolvedValue([
+            createTask({
+                id: 'completed-task',
+                title: 'Tarea completada con fecha',
+                status: 'completada',
+                dueDate: '2099-12-15',
+            }),
+        ]);
 
         renderDashboard();
 
         expect(
-            screen.getByRole('link', { name: /Tarea terminada/ }),
+            await screen.findByRole('link', {
+                name: 'Tarea completada con fecha',
+            }),
+        ).toBeInTheDocument();
+
+        expect(screen.getByText(/Fecha límite:/)).toBeInTheDocument();
+
+        expect(
+            screen.getByText(/Completada · Fecha límite:/),
+        ).toBeInTheDocument();
+    });
+
+    it('muestra un error accesible cuando falla la carga de Firestore', async () => {
+        mockGetAllFirestoreTasks.mockRejectedValue(
+            new Error('Error de lectura de Firestore'),
+        );
+
+        renderDashboard();
+
+        expect(
+            await screen.findByRole('heading', {
+                name: 'No se pudieron cargar las tareas',
+            }),
+        ).toBeInTheDocument();
+
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'No se pudieron cargar tus tareas desde Firestore.',
+        );
+
+        expect(
+            screen.getByRole('button', { name: 'Reintentar carga' }),
         ).toBeInTheDocument();
 
         expect(
-            screen.queryByText(
-                'No tienes tareas pendientes con fecha límite.',
-            ),
+            screen.queryByRole('heading', { name: 'Resumen de tareas' }),
         ).not.toBeInTheDocument();
     });
 
-    it('muestra un error accesible si falla la lectura de tareas', () => {
-        const getItemSpy = vi
-            .spyOn(Storage.prototype, 'getItem')
-            .mockImplementation(() => {
-                throw new Error('Storage unavailable');
-            });
+    it('recupera las tareas al reintentar una carga fallida', async () => {
+        mockGetAllFirestoreTasks
+            .mockRejectedValueOnce(new Error('Error temporal'))
+            .mockResolvedValueOnce([
+                createTask({
+                    id: 'recovered',
+                    title: 'Tarea recuperada',
+                    dueDate: '2099-12-15',
+                }),
+            ]);
 
         renderDashboard();
 
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'No se pudieron cargar las tareas',
-        );
-
         expect(
-            screen.queryByText('Total de tareas'),
-        ).not.toBeInTheDocument();
-
-        expect(
-            screen.queryByText(/Aún no tienes tareas/),
-        ).not.toBeInTheDocument();
-
-        expect(getItemSpy).toHaveBeenCalled();
-    });
-
-    it('recupera el panel cuando se reintenta una lectura fallida', () => {
-        const tasks = [
-            createTask('1', 'Tarea recuperada', 'pendiente', null),
-        ];
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-
-        const originalGetItem = Storage.prototype.getItem;
-        let shouldFail = true;
-
-        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(
-            function (this: Storage, key: string) {
-                if (key === STORAGE_KEY && shouldFail) {
-                    shouldFail = false;
-                    throw new Error('Storage unavailable');
-                }
-
-                return originalGetItem.call(this, key);
-            },
-        );
-
-        renderDashboard();
-
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'No se pudieron cargar las tareas',
-        );
+            await screen.findByRole('heading', {
+                name: 'No se pudieron cargar las tareas',
+            }),
+        ).toBeInTheDocument();
 
         fireEvent.click(
             screen.getByRole('button', { name: 'Reintentar carga' }),
         );
 
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-
         expect(
-            screen.getByRole('heading', { name: 'Panel principal' }),
+            await screen.findByRole('link', { name: 'Tarea recuperada' }),
         ).toBeInTheDocument();
 
-        const summary = screen.getByRole('region', {
-            name: 'Resumen de tareas',
-        });
+        expect(mockGetAllFirestoreTasks).toHaveBeenCalledTimes(2);
+    });
 
-        expect(summary).toHaveTextContent('Total de tareas1');
-        expect(summary).toHaveTextContent('Pendientes1');
+    it('no consulta Firestore si el usuario no está autenticado', async () => {
+        mockUseAuth.mockReturnValue({
+            status: 'unauthenticated',
+            user: null,
+            logout: mockLogout,
+        } as never);
+
+        renderDashboard();
+
+        expect(
+            await screen.findByRole('heading', {
+                name: 'Verifica tu acceso',
+            }),
+        ).toBeInTheDocument();
+
+        expect(mockGetAllFirestoreTasks).not.toHaveBeenCalled();
+
+        expect(
+            screen.queryByRole('heading', { name: 'Resumen de tareas' }),
+        ).not.toBeInTheDocument();
+    });
+
+    it('no consulta Firestore si el correo del usuario no está verificado', async () => {
+        mockUseAuth.mockReturnValue({
+            status: 'email-unverified',
+            user: {
+                uid: 'test-user',
+                emailVerified: false,
+            },
+            logout: mockLogout,
+        } as never);
+
+        renderDashboard();
+
+        expect(
+            await screen.findByRole('heading', {
+                name: 'Verifica tu acceso',
+            }),
+        ).toBeInTheDocument();
+
+        expect(mockGetAllFirestoreTasks).not.toHaveBeenCalled();
     });
 });

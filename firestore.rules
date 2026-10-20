@@ -1,0 +1,144 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isVerifiedOwner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email_verified == true;
+    }
+
+    // Las fechas se almacenan como Timestamp a medianoche UTC,
+    // o como null cuando no se ha definido una fecha.
+    function validDate(value) {
+      return value == null
+        || (
+          value is timestamp
+          && value.hours() == 0
+          && value.minutes() == 0
+          && value.seconds() == 0
+          && value.nanos() == 0
+        );
+    }
+
+    function validDateRange(data) {
+      return data.startDate == null
+        || data.dueDate == null
+        || (
+          data.startDate is timestamp
+          && data.dueDate is timestamp
+          && data.startDate <= data.dueDate
+        );
+    }
+
+    // Compara los componentes de la fecha en UTC.
+    // No requiere construir un Timestamp dentro de las reglas.
+    function isTodayOrFutureDate(value) {
+      return value.year() > request.time.year()
+        || (
+          value.year() == request.time.year()
+          && value.month() > request.time.month()
+        )
+        || (
+          value.year() == request.time.year()
+          && value.month() == request.time.month()
+          && value.day() >= request.time.day()
+        );
+    }
+
+    function validStartDateOnCreate(data) {
+      return data.startDate == null
+        || isTodayOrFutureDate(data.startDate);
+    }
+
+    function validStartDateOnUpdate(data) {
+      return data.startDate == resource.data.startDate
+        || data.startDate == null
+        || isTodayOrFutureDate(data.startDate);
+    }
+
+    function validTask(data) {
+      return data.keys().hasAll([
+          'title',
+          'description',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'startDate',
+          'dueDate'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'description',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'startDate',
+          'dueDate'
+        ])
+
+        && data.title is string
+        && data.title.size() >= 3
+        && data.title.size() <= 200
+        && data.title.matches(
+          '^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ .,;:!?¿¡"()/_+#%&@-]+$'
+        )
+        && data.title.matches(
+          '.*[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ].*'
+        )
+
+        && data.description is string
+        && data.description.size() <= 5000
+        && (
+          data.description == ''
+          || (
+            data.description.size() >= 3
+            && data.description.matches(
+              '^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ .,;:!?¿¡"()/_+#%&@-]+$'
+            )
+            && data.description.matches(
+              '.*[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ].*'
+            )
+          )
+        )
+
+        && data.status in [
+          'pendiente',
+          'en_progreso',
+          'completada'
+        ]
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && validDate(data.startDate)
+        && validDate(data.dueDate)
+        && validDateRange(data);
+    }
+
+    match /users/{uid}/tasks/{taskId} {
+      allow read: if isVerifiedOwner(uid);
+
+      allow create: if isVerifiedOwner(uid)
+        && validTask(request.resource.data)
+        && validStartDateOnCreate(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if resource != null
+        && isVerifiedOwner(uid)
+        && validTask(request.resource.data)
+        && validStartDateOnUpdate(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'description',
+          'status',
+          'updatedAt',
+          'startDate',
+          'dueDate'
+        ]);
+
+      allow delete: if isVerifiedOwner(uid);
+    }
+  }
+}
