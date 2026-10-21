@@ -39,10 +39,6 @@ export default function DashboardPage() {
 
     const loadTasks = useCallback(
         async (isRetry = false) => {
-            // Diferir la inicialización de estado fuera de la ejecución
-            // síncrona del efecto que inicia la carga.
-            await Promise.resolve();
-
             const requestId = ++loadRequestRef.current;
 
             if (!isAuthenticated) {
@@ -61,20 +57,26 @@ export default function DashboardPage() {
             }
 
             try {
-                const loadedTasks = await getAllFirestoreTasks();
+                const result = await getAllFirestoreTasks();
 
                 if (requestId !== loadRequestRef.current) {
                     return;
                 }
 
-                setTasks(loadedTasks);
+                setTasks(result);
                 setHasError(false);
-            } catch {
+            } catch (caughtError) {
                 if (requestId !== loadRequestRef.current) {
                     return;
                 }
 
-                // No conservar datos anteriores si la recarga falla.
+                // Registrar fallos reales sin mostrar detalles
+                // técnicos al usuario.
+                console.error(
+                    '[MateCode Dashboard] Error al cargar tareas:',
+                    caughtError,
+                );
+
                 setTasks([]);
                 setHasError(true);
             } finally {
@@ -88,14 +90,18 @@ export default function DashboardPage() {
     );
 
     useEffect(() => {
-        const timeoutId = window.setTimeout(() => {
-            void loadTasks();
-        }, 0);
+        let active = true;
+
+        // Iniciar la carga fuera de la ejecución síncrona
+        // del efecto para evitar renders encadenados.
+        void Promise.resolve().then(() => {
+            if (active) {
+                void loadTasks();
+            }
+        });
 
         return () => {
-            window.clearTimeout(timeoutId);
-
-            // Invalidar solicitudes anteriores al limpiar el efecto.
+            active = false;
             loadRequestRef.current += 1;
         };
     }, [loadTasks, userId, user?.emailVerified]);
@@ -112,13 +118,24 @@ export default function DashboardPage() {
         (task) => task.status === 'completada',
     ).length;
 
-    const upcomingTasks = tasks
-        .filter((task) => task.dueDate !== null)
+    // Mostrar también las tareas sin fecha límite.
+    // Primero: tareas con fecha, ordenadas por vencimiento.
+    // Después: tareas sin fecha, de más reciente a más antigua.
+    const upcomingTasks = [...tasks]
         .sort((first, second) => {
-            const firstDate = first.dueDate ?? '';
-            const secondDate = second.dueDate ?? '';
+            if (first.dueDate !== null && second.dueDate !== null) {
+                return first.dueDate.localeCompare(second.dueDate);
+            }
 
-            return firstDate.localeCompare(secondDate);
+            if (first.dueDate !== null) {
+                return -1;
+            }
+
+            if (second.dueDate !== null) {
+                return 1;
+            }
+
+            return second.createdAt.localeCompare(first.createdAt);
         })
         .slice(0, 5);
 
@@ -185,8 +202,9 @@ export default function DashboardPage() {
                 >
                     {dueDateStatus === 'vencida' && 'Vencida · '}
                     {dueDateStatus === 'por-vencer' && 'Por vencer · '}
-                    {dueDateStatus === 'completada' && 'Completada · '}
-                    Fecha límite: {formatCalendarDate(task.dueDate!)}
+                    {task.dueDate !== null
+                        ? `Fecha límite: ${formatCalendarDate(task.dueDate)}`
+                        : 'Sin fecha programada'}
                     {' · '}
                     {getEffectiveStatusLabel(task)}
                 </span>
@@ -290,10 +308,6 @@ export default function DashboardPage() {
                                     Crear mi primera tarea
                                 </Link>
                             </div>
-                        ) : upcomingTasks.length === 0 ? (
-                            <p className="dashboard-empty">
-                                No tienes tareas con fecha límite.
-                            </p>
                         ) : (
                             <ul className="dashboard-upcoming-list">
                                 {upcomingTasks.map(renderTaskLink)}

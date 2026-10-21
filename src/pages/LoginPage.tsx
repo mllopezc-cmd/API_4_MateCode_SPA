@@ -88,10 +88,14 @@ export default function LoginPage() {
     const [formError, setFormError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const isInitializationBlocked =
+        status === 'loading' || status === 'error';
+
     async function handleSubmit(
         event: FormEvent<HTMLFormElement>,
     ) {
         event.preventDefault();
+
         setFormError('');
         setIsSubmitting(true);
 
@@ -106,6 +110,7 @@ export default function LoginPage() {
                         returnTo: from,
                     },
                 });
+
                 return;
             }
 
@@ -120,9 +125,6 @@ export default function LoginPage() {
             setIsSubmitting(false);
         }
     }
-
-    const isInitializationBlocked =
-        status === 'loading' || status === 'error';
 
     return (
         <main className="page-shell">

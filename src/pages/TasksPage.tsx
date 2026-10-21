@@ -91,11 +91,15 @@ function getTaskStatusMessage(task: Task): string {
     return task.dueDate
         ? `Estado: ${statusMessage}${dueStatusMessage} · Fecha límite: ${formatCalendarDate(task.dueDate)}`
         : `Estado: ${statusMessage}`;
-
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
+}
+
+interface PendingStatusOperation {
+    desiredStatus: TaskStatus;
+    confirmedTask: Task;
 }
 
 export default function TasksPage() {
@@ -113,6 +117,15 @@ export default function TasksPage() {
     const sessionUserIdRef = useRef(userId);
     const mountedRef = useRef(false);
     const loadRequestRef = useRef(0);
+
+    // Controla las tareas que tienen un cambio de estado pendiente.
+    const pendingStatusIdsRef = useRef<Set<string>>(new Set());
+    const statusOperationsRef = useRef<
+        Map<string, PendingStatusOperation>
+    >(new Map());
+    const [pendingStatusIds, setPendingStatusIds] = useState<Set<string>>(
+        () => new Set(),
+    );
 
     const [tasks, setTasks] = useState<Task[]>([]);
     const [isLoadingTasks, setIsLoadingTasks] = useState(true);
@@ -175,7 +188,29 @@ export default function TasksPage() {
     }, []);
 
     useEffect(() => {
+        let active = true;
+
+        // Invalidar inmediatamente las operaciones
+        // pendientes de la sesión anterior.
         sessionUserIdRef.current = userId;
+        pendingStatusIdsRef.current.clear();
+        statusOperationsRef.current.clear();
+
+        // Actualizar el estado visual fuera de la
+        // ejecución síncrona del efecto.
+        void Promise.resolve().then(() => {
+            if (
+                active &&
+                mountedRef.current &&
+                sessionUserIdRef.current === userId
+            ) {
+                setPendingStatusIds(new Set());
+            }
+        });
+
+        return () => {
+            active = false;
+        };
     }, [userId]);
 
     useEffect(() => {
@@ -189,8 +224,7 @@ export default function TasksPage() {
             sessionUserIdRef.current === userId;
 
         async function initializeTasks() {
-            // Diferir las actualizaciones iniciales fuera de la ejecución
-            // síncrona del efecto.
+            // Diferir actualizaciones iniciales fuera del efecto síncrono.
             await Promise.resolve();
 
             if (!active) {
@@ -343,23 +377,28 @@ export default function TasksPage() {
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
 
-        if (!isAuthenticated || !userId || isSubmitting) {
+        if (
+            !isAuthenticated ||
+            !userId ||
+            isSubmitting ||
+            (
+                editingTaskId !== null &&
+                pendingStatusIdsRef.current.has(editingTaskId)
+            )
+        ) {
             return;
         }
 
         setError('');
         setSuccess('');
 
-        // Obtener la fecha actual en UTC, igual que el mapper y Firestore.
         const todayString = new Date().toISOString().slice(0, 10);
 
-        // La fecha de inicio debe ser hoy o una fecha futura.
         if (form.startDate && form.startDate < todayString) {
             setError('La fecha de inicio debe ser hoy o una fecha futura.');
             return;
         }
 
-        // La fecha límite no puede ser anterior a la fecha de inicio.
         if (
             form.startDate &&
             form.dueDate &&
@@ -445,7 +484,10 @@ export default function TasksPage() {
     }
 
     function handleEdit(task: Task) {
-        if (isSubmitting) {
+        if (
+            isSubmitting ||
+            pendingStatusIdsRef.current.has(task.id)
+        ) {
             return;
         }
 
@@ -488,7 +530,7 @@ export default function TasksPage() {
         setSuccess('');
     }
 
-    async function handleStatusChange(
+    function handleStatusChange(
         id: string,
         taskStatus: TaskStatus,
     ) {
@@ -496,58 +538,149 @@ export default function TasksPage() {
             return;
         }
 
-        setError('');
-        setSuccess('');
-        setIsSubmitting(true);
+        const currentTask = tasks.find((task) => task.id === id);
+
+        if (!currentTask || currentTask.status === taskStatus) {
+            return;
+        }
 
         const operationUserId = userId;
 
-        try {
-            const updatedTask = await updateFirestoreTask(
-                id,
-                { status: taskStatus },
-            );
+        setError('');
+        setSuccess('');
 
-            if (
-                !mountedRef.current ||
-                sessionUserIdRef.current !== operationUserId
-            ) {
-                return;
-            }
+        // Reflejar el cambio de inmediato en la interfaz.
+        setTasks((currentTasks) =>
+            currentTasks.map((task) =>
+                task.id === id
+                    ? { ...task, status: taskStatus }
+                    : task,
+            ),
+        );
 
-            setTasks((currentTasks) =>
-                currentTasks.map((task) =>
-                    task.id === updatedTask.id ? updatedTask : task,
-                ),
-            );
+        // Si esta tarea ya está guardando un estado anterior,
+        // conservar solo la última selección del usuario.
+        const existingOperation = statusOperationsRef.current.get(id);
 
-            setSuccess(STATUS_MESSAGES[taskStatus]);
-        } catch (caughtError) {
-            if (
-                !mountedRef.current ||
-                sessionUserIdRef.current !== operationUserId
-            ) {
-                return;
-            }
+        if (existingOperation) {
+            existingOperation.desiredStatus = taskStatus;
+            return;
+        }
 
-            setError(
-                getErrorMessage(
-                    caughtError,
-                    'No se pudo actualizar el estado de la tarea.',
-                ),
-            );
-        } finally {
-            if (
-                mountedRef.current &&
-                sessionUserIdRef.current === operationUserId
-            ) {
-                setIsSubmitting(false);
+        const operation: PendingStatusOperation = {
+            desiredStatus: taskStatus,
+            confirmedTask: currentTask,
+        };
+
+        statusOperationsRef.current.set(id, operation);
+        pendingStatusIdsRef.current.add(id);
+
+        setPendingStatusIds(new Set(pendingStatusIdsRef.current));
+
+        const canApplyResult = () =>
+            mountedRef.current &&
+            sessionUserIdRef.current === operationUserId &&
+            statusOperationsRef.current.get(id) === operation;
+
+        async function persistStatusChanges() {
+            try {
+                while (canApplyResult()) {
+                    const statusToSave = operation.desiredStatus;
+
+                    // El último estado solicitado ya está confirmado.
+                    if (statusToSave === operation.confirmedTask.status) {
+                        break;
+                    }
+
+                    try {
+                        const savedTask = await updateFirestoreTask(
+                            id,
+                            { status: statusToSave },
+                        );
+
+                        if (!canApplyResult()) {
+                            return;
+                        }
+
+                        // Guardar la última versión confirmada.
+                        operation.confirmedTask = savedTask;
+
+                        // Si el usuario cambió de nuevo el selector
+                        // durante la petición, conservar visualmente
+                        // esa selección más reciente.
+                        setTasks((currentTasks) =>
+                            currentTasks.map((task) =>
+                                task.id === id
+                                    ? {
+                                        ...savedTask,
+                                        status: operation.desiredStatus,
+                                    }
+                                    : task,
+                            ),
+                        );
+
+                        if (operation.desiredStatus === statusToSave) {
+                            setSuccess(STATUS_MESSAGES[statusToSave]);
+                        }
+                    } catch (caughtError) {
+                        if (!canApplyResult()) {
+                            return;
+                        }
+
+                        // Si hubo otra selección mientras se guardaba,
+                        // continuar con el estado más reciente.
+                        if (operation.desiredStatus !== statusToSave) {
+                            continue;
+                        }
+
+                        // Si falla la última selección, recuperar
+                        // el último estado confirmado por Firestore.
+                        setTasks((currentTasks) =>
+                            currentTasks.map((task) =>
+                                task.id === id
+                                    ? operation.confirmedTask
+                                    : task,
+                            ),
+                        );
+
+                        setError(
+                            getErrorMessage(
+                                caughtError,
+                                'No se pudo actualizar el estado de la tarea.',
+                            ),
+                        );
+
+                        break;
+                    }
+                }
+            } finally {
+                if (statusOperationsRef.current.get(id) === operation) {
+                    statusOperationsRef.current.delete(id);
+                    pendingStatusIdsRef.current.delete(id);
+
+                    if (
+                        mountedRef.current &&
+                        sessionUserIdRef.current === operationUserId
+                    ) {
+                        setPendingStatusIds(
+                            new Set(pendingStatusIdsRef.current),
+                        );
+                    }
+                }
             }
         }
+
+        // Guardar en segundo plano, sin bloquear el selector.
+        void persistStatusChanges();
     }
 
     async function handleDelete(task: Task) {
-        if (!isAuthenticated || !userId || isSubmitting) {
+        if (
+            !isAuthenticated ||
+            !userId ||
+            isSubmitting ||
+            pendingStatusIdsRef.current.has(task.id)
+        ) {
             return;
         }
 
@@ -629,7 +762,11 @@ export default function TasksPage() {
             </p>
 
             {success && (
-                <p className="task-success" role="status" aria-live="polite">
+                <p
+                    className="task-success"
+                    role="status"
+                    aria-live="polite"
+                >
                     {success}
                 </p>
             )}
@@ -661,7 +798,9 @@ export default function TasksPage() {
 
             <section aria-labelledby="task-form-heading">
                 <h2 id="task-form-heading">
-                    {editingTaskId !== null ? 'Editar tarea' : 'Crear una tarea'}
+                    {editingTaskId !== null
+                        ? 'Editar tarea'
+                        : 'Crear una tarea'}
                 </h2>
 
                 <form onSubmit={handleSubmit} className="task-form">
@@ -722,7 +861,9 @@ export default function TasksPage() {
                                     startDate: event.target.value,
                                 }))
                             }
-                            aria-invalid={startDateError ? true : undefined}
+                            aria-invalid={
+                                startDateError ? true : undefined
+                            }
                             aria-describedby={
                                 startDateError
                                     ? 'task-start-date-help task-start-date-error'
@@ -762,9 +903,13 @@ export default function TasksPage() {
                                     dueDate: event.target.value,
                                 }))
                             }
-                            aria-invalid={dueDateError ? true : undefined}
+                            aria-invalid={
+                                dueDateError ? true : undefined
+                            }
                             aria-describedby={
-                                dueDateError ? 'task-due-date-error' : undefined
+                                dueDateError
+                                    ? 'task-due-date-error'
+                                    : undefined
                             }
                             disabled={isSubmitting}
                         />
@@ -784,6 +929,10 @@ export default function TasksPage() {
                             type="submit"
                             disabled={
                                 isSubmitting ||
+                                (
+                                    editingTaskId !== null &&
+                                    pendingStatusIds.has(editingTaskId)
+                                ) ||
                                 isLoadingTasks ||
                                 !isAuthenticated ||
                                 tasksLoadFailed
@@ -837,7 +986,10 @@ export default function TasksPage() {
                                 const selectedStatus =
                                     event.target.value as StatusFilter;
 
-                                const routeByStatus: Record<StatusFilter, string> = {
+                                const routeByStatus: Record<
+                                    StatusFilter,
+                                    string
+                                > = {
                                     todas: '/tareas',
                                     pendiente: '/tareas/pendientes',
                                     en_progreso: '/tareas/en-progreso',
@@ -845,14 +997,26 @@ export default function TasksPage() {
                                     vencidas: '/tareas/vencidas',
                                 };
 
-                                navigate(routeByStatus[selectedStatus]);
+                                navigate(
+                                    routeByStatus[selectedStatus],
+                                );
                             }}
                         >
-                            <option value="todas">Todos los estados</option>
-                            <option value="pendiente">Pendientes</option>
-                            <option value="en_progreso">En progreso</option>
-                            <option value="completada">Completadas</option>
-                            <option value="vencidas">Vencidas</option>
+                            <option value="todas">
+                                Todos los estados
+                            </option>
+                            <option value="pendiente">
+                                Pendientes
+                            </option>
+                            <option value="en_progreso">
+                                En progreso
+                            </option>
+                            <option value="completada">
+                                Completadas
+                            </option>
+                            <option value="vencidas">
+                                Vencidas
+                            </option>
                         </select>
                     </div>
 
@@ -891,7 +1055,11 @@ export default function TasksPage() {
                 )}
 
                 {isLoadingTasks ? (
-                    <div className="task-empty" role="status" aria-live="polite">
+                    <div
+                        className="task-empty"
+                        role="status"
+                        aria-live="polite"
+                    >
                         <p className="task-empty-title">
                             Cargando tareas...
                         </p>
@@ -910,7 +1078,9 @@ export default function TasksPage() {
                         <button
                             type="button"
                             onClick={handleRetryLoad}
-                            disabled={isSubmitting || !isAuthenticated}
+                            disabled={
+                                isSubmitting || !isAuthenticated
+                            }
                         >
                             Reintentar carga
                         </button>
@@ -933,8 +1103,9 @@ export default function TasksPage() {
                                         </p>
 
                                         <p>
-                                            Crea tu primera tarea usando el formulario
-                                            para comenzar a organizar tus actividades.
+                                            Crea tu primera tarea usando el
+                                            formulario para comenzar a organizar
+                                            tus actividades.
                                         </p>
                                     </>
                                 ) : (
@@ -944,9 +1115,10 @@ export default function TasksPage() {
                                         </p>
 
                                         <p>
-                                            Ninguna tarea coincide con los filtros
-                                            seleccionados. Restablece los filtros para
-                                            volver a ver todas tus tareas.
+                                            Ninguna tarea coincide con los
+                                            filtros seleccionados. Restablece
+                                            los filtros para volver a ver todas
+                                            tus tareas.
                                         </p>
                                     </>
                                 )}
@@ -954,7 +1126,9 @@ export default function TasksPage() {
                         ) : (
                             <div className="task-list">
                                 {visibleTasks.map((task) => {
-                                    const dueDateStatus = getDueDateStatus(task);
+                                    const dueDateStatus =
+                                        getDueDateStatus(task);
+
                                     const automaticPriority =
                                         getAutomaticPriority(task);
 
@@ -969,9 +1143,12 @@ export default function TasksPage() {
                                                     className={`task-card-status-icon task-card-status-icon-${dueDateStatus}`}
                                                     aria-hidden="true"
                                                 >
-                                                    {dueDateStatus === 'vencida' && '!'}
-                                                    {dueDateStatus === 'por-vencer' && '◷'}
-                                                    {dueDateStatus === 'completada' && '✓'}
+                                                    {dueDateStatus ===
+                                                        'vencida' && '!'}
+                                                    {dueDateStatus ===
+                                                        'por-vencer' && '◷'}
+                                                    {dueDateStatus ===
+                                                        'completada' && '✓'}
                                                 </span>
                                             )}
 
@@ -983,7 +1160,11 @@ export default function TasksPage() {
                                                         className={`task-priority task-priority-${automaticPriority}`}
                                                     >
                                                         Prioridad:{' '}
-                                                        {PRIORITY_LABELS[automaticPriority]}
+                                                        {
+                                                            PRIORITY_LABELS[
+                                                            automaticPriority
+                                                            ]
+                                                        }
                                                     </span>
                                                 )}
                                             </div>
@@ -996,14 +1177,18 @@ export default function TasksPage() {
                                                 {task.startDate && (
                                                     <p className="task-card-start-date">
                                                         Inicio planificado:{' '}
-                                                        {formatCalendarDate(task.startDate)}
+                                                        {formatCalendarDate(
+                                                            task.startDate,
+                                                        )}
                                                     </p>
                                                 )}
 
                                                 <p
                                                     className={`task-card-status-message task-card-status-message-${dueDateStatus}`}
                                                 >
-                                                    {getTaskStatusMessage(task)}
+                                                    {getTaskStatusMessage(
+                                                        task,
+                                                    )}
                                                 </p>
                                             </div>
 
@@ -1011,14 +1196,23 @@ export default function TasksPage() {
                                                 <button
                                                     type="button"
                                                     className="task-button-secondary"
-                                                    onClick={() => handleEdit(task)}
-                                                    disabled={isSubmitting}
+                                                    onClick={() =>
+                                                        handleEdit(task)
+                                                    }
+                                                    disabled={
+                                                        isSubmitting ||
+                                                        pendingStatusIds.has(
+                                                            task.id,
+                                                        )
+                                                    }
                                                 >
                                                     Editar
                                                 </button>
 
                                                 <div className="task-form-field task-status-control">
-                                                    <label htmlFor={`task-status-${task.id}`}>
+                                                    <label
+                                                        htmlFor={`task-status-${task.id}`}
+                                                    >
                                                         Estado de la tarea
                                                     </label>
 
@@ -1026,9 +1220,10 @@ export default function TasksPage() {
                                                         id={`task-status-${task.id}`}
                                                         value={task.status}
                                                         onChange={(event) => {
-                                                            void handleStatusChange(
+                                                            handleStatusChange(
                                                                 task.id,
-                                                                event.target.value as TaskStatus,
+                                                                event.target
+                                                                    .value as TaskStatus,
                                                             );
                                                         }}
                                                         disabled={isSubmitting}
@@ -1043,6 +1238,7 @@ export default function TasksPage() {
                                                             Completada
                                                         </option>
                                                     </select>
+
                                                 </div>
 
                                                 <button
@@ -1052,7 +1248,12 @@ export default function TasksPage() {
                                                     onClick={() => {
                                                         void handleDelete(task);
                                                     }}
-                                                    disabled={isSubmitting}
+                                                    disabled={
+                                                        isSubmitting ||
+                                                        pendingStatusIds.has(
+                                                            task.id,
+                                                        )
+                                                    }
                                                 >
                                                     Eliminar
                                                 </button>
@@ -1066,7 +1267,10 @@ export default function TasksPage() {
                 )}
             </section>
 
-            <Link to="/panel" className="tasks-back-link">
+            <Link
+                to="/panel"
+                className="tasks-back-link"
+            >
                 Volver al panel
             </Link>
         </main>

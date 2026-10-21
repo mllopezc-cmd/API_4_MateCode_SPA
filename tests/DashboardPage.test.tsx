@@ -205,8 +205,14 @@ describe('DashboardPage', () => {
         ).toBeInTheDocument();
 
         expect(
-            upcomingList.queryByRole('link', { name: 'Tarea sin fecha' }),
-        ).not.toBeInTheDocument();
+            upcomingList.getByRole('link', {
+                name: 'Tarea sin fecha',
+            }),
+        ).toBeInTheDocument();
+
+        expect(
+            upcomingList.getByText(/Sin fecha programada/),
+        ).toBeInTheDocument();
 
         const taskLinks = Array.from(list.querySelectorAll('a')).map(
             (link) => link.textContent,
@@ -216,6 +222,7 @@ describe('DashboardPage', () => {
             'Tarea anterior',
             'Tarea intermedia',
             'Tarea posterior',
+            'Tarea sin fecha',
         ]);
     });
 
@@ -343,8 +350,12 @@ describe('DashboardPage', () => {
         expect(screen.getByText(/Fecha límite:/)).toBeInTheDocument();
 
         expect(
-            screen.getByText(/Completada · Fecha límite:/),
+            screen.getByText(/Fecha límite:.* · Completada/),
         ).toBeInTheDocument();
+
+        expect(
+            screen.queryByText(/Completada · Fecha límite:/),
+        ).not.toBeInTheDocument();
     });
 
     it('muestra un error accesible cuando falla la carga de Firestore', async () => {
@@ -444,5 +455,107 @@ describe('DashboardPage', () => {
         ).toBeInTheDocument();
 
         expect(mockGetAllFirestoreTasks).not.toHaveBeenCalled();
+    });
+
+    it('muestra las tareas sin fecha y conserva sus estados', async () => {
+        mockGetAllFirestoreTasks.mockResolvedValue([
+            createTask({
+                id: 'undated-pending',
+                title: 'Pendiente sin fecha',
+                status: 'pendiente',
+                dueDate: null,
+            }),
+            createTask({
+                id: 'undated-done',
+                title: 'Completada sin fecha',
+                status: 'completada',
+                dueDate: null,
+            }),
+        ]);
+
+        renderDashboard();
+
+        const heading = await screen.findByRole('heading', {
+            name: 'Próximas tareas',
+        });
+
+        const section = heading.closest('section');
+        expect(section).not.toBeNull();
+
+        const list = within(section!);
+
+        expect(
+            list.getByRole('link', {
+                name: 'Pendiente sin fecha',
+            }),
+        ).toBeInTheDocument();
+
+        expect(
+            list.getByRole('link', {
+                name: 'Completada sin fecha',
+            }),
+        ).toBeInTheDocument();
+
+        expect(
+            list.getByText('Sin fecha programada · Pendiente'),
+        ).toBeInTheDocument();
+
+        const completedTaskItem = list
+            .getByRole('link', {
+                name: 'Completada sin fecha',
+            })
+            .closest('li');
+
+        expect(completedTaskItem).not.toBeNull();
+
+        expect(completedTaskItem).toHaveTextContent(
+            'Sin fecha programada',
+        );
+
+        expect(completedTaskItem).toHaveTextContent(
+            'Completada',
+        );
+
+        expect(
+            list.queryByText(
+                /Completada · Sin fecha programada · Completada/,
+            ),
+        ).not.toBeInTheDocument();
+    });
+
+    it('mantiene el límite de cinco y prioriza las tareas con fecha', async () => {
+        mockGetAllFirestoreTasks.mockResolvedValue([
+            ...Array.from({ length: 5 }, (_, index) =>
+                createTask({
+                    id: `undated-${index}`,
+                    title: `Sin fecha ${index}`,
+                    dueDate: null,
+                }),
+            ),
+            createTask({
+                id: 'dated',
+                title: 'Con fecha próxima',
+                dueDate: '2099-12-01',
+            }),
+        ]);
+
+        renderDashboard();
+
+        const heading = await screen.findByRole('heading', {
+            name: 'Próximas tareas',
+        });
+
+        const section = heading.closest('section');
+        expect(section).not.toBeNull();
+
+        expect(
+            section!.querySelectorAll('.dashboard-upcoming-list li'),
+        ).toHaveLength(5);
+
+        expect(
+            within(section!).getByRole('link', {
+                name: 'Con fecha próxima',
+            }),
+        ).toBeInTheDocument();
     });
 });

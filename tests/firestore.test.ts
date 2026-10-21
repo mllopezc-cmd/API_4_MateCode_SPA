@@ -5,7 +5,7 @@ const { getFirestoreMock, getFirebaseAppMock } = vi.hoisted(() => ({
     getFirebaseAppMock: vi.fn(),
 }));
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('firebase/firestore/lite', () => ({
     getFirestore: getFirestoreMock,
 }));
 

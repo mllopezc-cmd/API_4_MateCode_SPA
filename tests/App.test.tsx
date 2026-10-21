@@ -15,7 +15,7 @@ import type {
     AuthContextType,
     AuthStatus,
 } from '../src/context/AuthContext';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
 vi.mock('../src/context/AuthProvider', async () => {
     const React = await import('react');
@@ -120,6 +120,19 @@ function LocationProbe() {
     );
 }
 
+function LoginNavigationProbe() {
+    const navigate = useNavigate();
+
+    return (
+        <button
+            type="button"
+            onClick={() => navigate('/iniciar-sesion')}
+        >
+            Probar acceso manual a iniciar sesión
+        </button>
+    );
+}
+
 function renderApp(path = '/') {
     window.history.replaceState({}, '', '/');
 
@@ -127,6 +140,7 @@ function renderApp(path = '/') {
         <MemoryRouter initialEntries={[path]}>
             <AppRoutes />
             <LocationProbe />
+            <LoginNavigationProbe />
         </MemoryRouter>,
     );
 }
@@ -244,6 +258,36 @@ describe('Protección de rutas privadas', () => {
         expect(screen.getByTestId('current-location')).toHaveTextContent(
             '/panel',
         );
+    });
+
+    it('redirige al panel si un usuario autenticado abre iniciar sesión', async () => {
+        renderApp('/iniciar-sesion');
+
+        await loginThroughForm();
+
+        expect(
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            }),
+        ).toBeInTheDocument();
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Probar acceso manual a iniciar sesión',
+            }),
+        );
+
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/panel');
+
+            expect(
+                screen.queryByRole('heading', {
+                    name: 'Iniciar sesión',
+                }),
+            ).not.toBeInTheDocument();
+        });
     });
 
     it('regresa a la ruta privada solicitada después del inicio de sesión', async () => {

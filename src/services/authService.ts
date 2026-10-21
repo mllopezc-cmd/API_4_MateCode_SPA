@@ -151,8 +151,6 @@ export async function register(
 
     let credential: UserCredential;
 
-    // Mantén aquí el resto de la implementación actual.
-
     try {
         credential = await createUserWithEmailAndPassword(
             getAuthInstance(),

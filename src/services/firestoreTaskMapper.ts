@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from 'firebase/firestore/lite';
 
 import type {
     CreateTaskInput,
@@ -162,6 +162,15 @@ function toFirestoreDate(value: string | null): Timestamp | null {
     );
 }
 
+// Firestore completo y Firestore Lite pueden devolver instancias
+// Timestamp de constructores distintos. No aceptar objetos arbitrarios.
+function isFirestoreTimestamp(
+    value: unknown,
+): value is Timestamp {
+    return value instanceof Timestamp;
+}
+
+
 function fromFirestoreDate(
     value: unknown,
     field: string,
@@ -170,7 +179,7 @@ function fromFirestoreDate(
         return null;
     }
 
-    if (!(value instanceof Timestamp)) {
+    if (!isFirestoreTimestamp(value)) {
         throw new FirestoreTaskDataError(
             `El campo ${field} debe ser un Timestamp o null.`,
         );
@@ -396,8 +405,8 @@ export function fromFirestoreTaskData(
     validateTaskFields(data);
 
     if (
-        !(value.createdAt instanceof Timestamp) ||
-        !(value.updatedAt instanceof Timestamp)
+        !isFirestoreTimestamp(value.createdAt) ||
+        !isFirestoreTimestamp(value.updatedAt)
     ) {
         throw new FirestoreTaskDataError(
             'Las marcas temporales del documento no son válidas.',

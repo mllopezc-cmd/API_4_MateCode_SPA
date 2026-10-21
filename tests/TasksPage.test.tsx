@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    act,
     fireEvent,
     render,
     screen,
@@ -530,6 +531,284 @@ describe('Interfaz de gestión de tareas', () => {
                 startDate: updatedStartDate,
             }),
         );
+    });
+
+    it('actualiza el estado visual antes de la respuesta de Firestore', async () => {
+        const originalTask = createTask({
+            id: 'optimistic-task',
+            title: 'Tarea optimista',
+        });
+
+        storedTasks = [originalTask];
+
+        let resolveUpdate!: (task: Task) => void;
+
+        firestoreMocks.updateFirestoreTask.mockImplementationOnce(
+            () =>
+                new Promise<Task>((resolve) => {
+                    resolveUpdate = resolve;
+                }),
+        );
+
+        renderTasksPage();
+
+        const article = await screen.findByRole('article', {
+            name: 'Tarea: Tarea optimista',
+        });
+
+        const statusSelect = within(article).getByRole('combobox', {
+            name: 'Estado de la tarea',
+        });
+
+        fireEvent.change(statusSelect, {
+            target: { value: 'en_progreso' },
+        });
+
+        expect(statusSelect).toHaveValue('en_progreso');
+
+        expect(
+            within(article).getByText('Estado: En progreso'),
+        ).toBeInTheDocument();
+
+        expect(statusSelect).not.toBeDisabled();
+
+        expect(
+            within(article).queryByText('Guardando estado…'),
+        ).not.toBeInTheDocument();
+
+        expect(
+            firestoreMocks.updateFirestoreTask,
+        ).toHaveBeenCalledWith(
+            'optimistic-task',
+            { status: 'en_progreso' },
+        );
+
+        await act(async () => {
+            resolveUpdate({
+                ...originalTask,
+                status: 'en_progreso',
+            });
+        });
+
+        expect(statusSelect).not.toBeDisabled();
+
+        expect(
+            within(article).queryByText('Guardando estado…'),
+        ).not.toBeInTheDocument();
+
+        expect(
+            screen.getByText(
+                'La tarea se marcó como en progreso correctamente.',
+            ),
+        ).toBeInTheDocument();
+    });
+
+    it('restaura el estado anterior si falla Firestore', async () => {
+        storedTasks = [
+            createTask({
+                id: 'rollback-task',
+                title: 'Tarea con fallo',
+            }),
+        ];
+
+        let rejectUpdate!: (reason: Error) => void;
+
+        firestoreMocks.updateFirestoreTask.mockImplementationOnce(
+            () =>
+                new Promise<Task>((_resolve, reject) => {
+                    rejectUpdate = reject;
+                }),
+        );
+
+        renderTasksPage();
+
+        const article = await screen.findByRole('article', {
+            name: 'Tarea: Tarea con fallo',
+        });
+
+        const statusSelect = within(article).getByRole('combobox', {
+            name: 'Estado de la tarea',
+        });
+
+        fireEvent.change(statusSelect, {
+            target: { value: 'completada' },
+        });
+
+        expect(statusSelect).toHaveValue('completada');
+
+        expect(
+            within(article).getByText('Estado: Completada'),
+        ).toBeInTheDocument();
+
+        await act(async () => {
+            rejectUpdate(new Error('Fallo de actualización simulado.'));
+        });
+
+        expect(statusSelect).toHaveValue('pendiente');
+
+        expect(
+            within(article).getByText('Estado: Pendiente'),
+        ).toBeInTheDocument();
+
+        expect(statusSelect).not.toBeDisabled();
+
+        expect(
+            await screen.findByRole('alert'),
+        ).toHaveTextContent('Fallo de actualización simulado.');
+    });
+
+    it('permite cambiar otra tarea mientras una actualización está pendiente', async () => {
+        storedTasks = [
+            createTask({
+                id: 'slow-task',
+                title: 'Tarea lenta',
+            }),
+            createTask({
+                id: 'fast-task',
+                title: 'Tarea rápida',
+            }),
+        ];
+
+        let resolveSlow!: (task: Task) => void;
+
+        firestoreMocks.updateFirestoreTask.mockImplementationOnce(
+            () =>
+                new Promise<Task>((resolve) => {
+                    resolveSlow = resolve;
+                }),
+        );
+
+        renderTasksPage();
+
+        const slowArticle = await screen.findByRole('article', {
+            name: 'Tarea: Tarea lenta',
+        });
+
+        const fastArticle = screen.getByRole('article', {
+            name: 'Tarea: Tarea rápida',
+        });
+
+        const slowSelect = within(slowArticle).getByRole('combobox', {
+            name: 'Estado de la tarea',
+        });
+
+        const fastSelect = within(fastArticle).getByRole('combobox', {
+            name: 'Estado de la tarea',
+        });
+
+        fireEvent.change(slowSelect, {
+            target: { value: 'en_progreso' },
+        });
+
+        expect(slowSelect).not.toBeDisabled();
+        expect(fastSelect).not.toBeDisabled();
+
+        fireEvent.change(fastSelect, {
+            target: { value: 'completada' },
+        });
+
+        expect(fastSelect).toHaveValue('completada');
+
+        await waitFor(() => {
+            expect(
+                within(fastArticle).getByText('Estado: Completada'),
+            ).toBeInTheDocument();
+        });
+
+        await act(async () => {
+            resolveSlow({
+                ...storedTasks[0],
+                status: 'en_progreso',
+            });
+        });
+
+        expect(
+            within(slowArticle).getByText('Estado: En progreso'),
+        ).toBeInTheDocument();
+
+        expect(
+            within(fastArticle).getByText('Estado: Completada'),
+        ).toBeInTheDocument();
+    });
+
+    it('conserva la última selección de estado sin bloquear el selector', async () => {
+        const originalTask = createTask({
+            id: 'rapid-task',
+            title: 'Cambios rápidos',
+            status: 'pendiente',
+        });
+
+        storedTasks = [originalTask];
+
+        let resolveFirst!: (task: Task) => void;
+
+        firestoreMocks.updateFirestoreTask.mockImplementationOnce(
+            () => new Promise<Task>((resolve) => {
+                resolveFirst = resolve;
+            }),
+        );
+
+        renderTasksPage();
+
+        const article = await screen.findByRole('article', {
+            name: 'Tarea: Cambios rápidos',
+        });
+
+        const select = within(article).getByRole('combobox', {
+            name: 'Estado de la tarea',
+        });
+
+        fireEvent.change(select, {
+            target: { value: 'en_progreso' },
+        });
+
+        expect(select).toHaveValue('en_progreso');
+        expect(select).not.toBeDisabled();
+
+        fireEvent.change(select, {
+            target: { value: 'completada' },
+        });
+
+        expect(select).toHaveValue('completada');
+
+        expect(
+            within(article).getByText('Estado: Completada'),
+        ).toBeInTheDocument();
+
+        expect(
+            within(article).queryByText('Guardando estado…'),
+        ).not.toBeInTheDocument();
+
+        expect(
+            firestoreMocks.updateFirestoreTask,
+        ).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            resolveFirst({
+                ...originalTask,
+                status: 'en_progreso',
+            });
+        });
+
+        await waitFor(() => {
+            expect(
+                firestoreMocks.updateFirestoreTask,
+            ).toHaveBeenCalledTimes(2);
+
+            expect(
+                firestoreMocks.updateFirestoreTask,
+            ).toHaveBeenNthCalledWith(
+                2,
+                'rapid-task',
+                { status: 'completada' },
+            );
+
+            expect(select).toHaveValue('completada');
+
+            expect(
+                within(article).getByText('Estado: Completada'),
+            ).toBeInTheDocument();
+        });
     });
 
     it('permite marcar una tarea como completada', async () => {

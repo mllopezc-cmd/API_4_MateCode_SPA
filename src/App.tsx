@@ -1,5 +1,11 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from 'react-router-dom';
 
 import { AuthProvider } from './context/AuthProvider';
 import { useAuth } from './context/AuthContext';
@@ -22,15 +28,19 @@ import './App.css';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 
+function SessionLoading() {
+  return (
+    <main aria-live="polite" aria-busy="true">
+      <p>Comprobando sesión...</p>
+    </main>
+  );
+}
+
 function HomeRoute() {
   const { status } = useAuth();
 
   if (status === 'loading') {
-    return (
-      <main aria-live="polite" aria-busy="true">
-        <p>Comprobando sesión...</p>
-      </main>
-    );
+    return <SessionLoading />;
   }
 
   if (status === 'authenticated') {
@@ -38,6 +48,87 @@ function HomeRoute() {
   }
 
   return <HomePage />;
+}
+
+function LoginRoute() {
+  const { status } = useAuth();
+  const location = useLocation();
+
+  if (status === 'loading') {
+    return <SessionLoading />;
+  }
+
+  if (status === 'authenticated') {
+    const from = (
+      location.state as {
+        from?: {
+          pathname?: unknown;
+          search?: unknown;
+          hash?: unknown;
+        };
+      } | null
+    )?.from;
+
+    const allowedPrivatePaths = new Set([
+      '/panel',
+      '/tareas',
+      '/tareas/pendientes',
+      '/tareas/en-progreso',
+      '/tareas/completadas',
+      '/tareas/vencidas',
+      '/perfil',
+      '/configuracion',
+    ]);
+
+    const validSearch =
+      from?.search === undefined ||
+      (
+        typeof from.search === 'string' &&
+        (
+          from.search === '' ||
+          from.search.startsWith('?')
+        )
+      );
+
+    const validHash =
+      from?.hash === undefined ||
+      (
+        typeof from.hash === 'string' &&
+        (
+          from.hash === '' ||
+          from.hash.startsWith('#')
+        )
+      );
+
+    if (
+      from &&
+      typeof from.pathname === 'string' &&
+      allowedPrivatePaths.has(from.pathname) &&
+      validSearch &&
+      validHash
+    ) {
+      const search =
+        typeof from.search === 'string'
+          ? from.search
+          : '';
+
+      const hash =
+        typeof from.hash === 'string'
+          ? from.hash
+          : '';
+
+      return (
+        <Navigate
+          to={`${from.pathname}${search}${hash}`}
+          replace
+        />
+      );
+    }
+
+    return <Navigate to="/panel" replace />;
+  }
+
+  return <LoginPage />;
 }
 
 function RouteLoadingFallback() {
@@ -58,7 +149,7 @@ export function AppRoutes() {
           <Route path="/acerca-de" element={<AboutPage />} />
           <Route
             path="/iniciar-sesion"
-            element={<LoginPage />}
+            element={<LoginRoute />}
           />
           <Route
             path="/crear-cuenta"
@@ -107,7 +198,6 @@ export function AppRoutes() {
         </Routes>
       </Suspense>
     </AuthProvider>
-
   );
 }
 

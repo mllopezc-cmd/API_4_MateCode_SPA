@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from 'firebase/firestore/lite';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -248,6 +248,74 @@ describe('fromFirestoreTaskData', () => {
             createdAt: '2024-01-01T10:00:00.000Z',
             updatedAt: '2024-01-02T10:00:00.000Z',
         });
+    });
+
+    it('convierte documentos recuperados mediante Firestore Lite', () => {
+        const liteDocument = {
+            ...validDocument,
+            createdAt: Timestamp.fromDate(
+                new Date('2024-01-01T10:00:00.000Z'),
+            ),
+            updatedAt: Timestamp.fromDate(
+                new Date('2024-01-02T10:00:00.000Z'),
+            ),
+            startDate: Timestamp.fromDate(
+                new Date('2024-02-29T00:00:00.000Z'),
+            ),
+            dueDate: Timestamp.fromDate(
+                new Date('2024-03-15T00:00:00.000Z'),
+            ),
+        };
+
+        expect(fromFirestoreTaskData('task-lite', liteDocument)).toEqual({
+            id: 'task-lite',
+            ...validTask,
+            createdAt: '2024-01-01T10:00:00.000Z',
+            updatedAt: '2024-01-02T10:00:00.000Z',
+        });
+    });
+
+    it('acepta fechas opcionales nulas con marcas temporales Lite', () => {
+        const liteDocument = {
+            ...validDocument,
+            startDate: null,
+            dueDate: null,
+            createdAt: Timestamp.fromDate(
+                new Date('2024-01-01T10:00:00.000Z'),
+            ),
+            updatedAt: Timestamp.fromDate(
+                new Date('2024-01-02T10:00:00.000Z'),
+            ),
+        };
+
+        expect(fromFirestoreTaskData('task-lite', liteDocument)).toMatchObject({
+            startDate: null,
+            dueDate: null,
+        });
+    });
+
+    it('mantiene la validación de medianoche UTC para fechas Lite', () => {
+        const invalidDate = {
+            ...validDocument,
+            startDate: Timestamp.fromDate(
+                new Date('2024-02-29T12:00:00.000Z'),
+            ),
+        };
+
+        expect(() =>
+            fromFirestoreTaskData('task-lite', invalidDate),
+        ).toThrow('El campo startDate debe representar una fecha a medianoche UTC.');
+    });
+
+    it('rechaza objetos que simulan un Timestamp', () => {
+        expect(() =>
+            fromFirestoreTaskData('task-123', {
+                ...validDocument,
+                createdAt: {
+                    toDate: () => new Date('2024-01-01T10:00:00.000Z'),
+                },
+            }),
+        ).toThrow('Las marcas temporales del documento no son válidas.');
     });
 
     it('rechaza documentos con campos ausentes', () => {

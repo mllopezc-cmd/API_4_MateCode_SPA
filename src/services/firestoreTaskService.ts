@@ -1,4 +1,5 @@
 import {
+    Timestamp,
     collection,
     deleteDoc,
     doc,
@@ -7,36 +8,54 @@ import {
     runTransaction,
     serverTimestamp,
     setDoc,
-} from 'firebase/firestore';
+} from 'firebase/firestore/lite';
+
 import { getAuth } from 'firebase/auth';
 
 import { getFirestoreDb } from '../lib/firestore';
 import { getFirebaseApp } from '../lib/firebase';
+
 import {
     fromFirestoreTaskData,
     normalizeFirestoreTaskPatch,
     toFirestoreTaskData,
     validateUpdatedFirestoreTaskData,
 } from './firestoreTaskMapper';
-import type { CreateTaskInput, Task, UpdateTaskInput } from '../types/task';
+
+import type {
+    CreateTaskInput,
+    Task,
+    UpdateTaskInput,
+} from '../types/task';
 
 function getVerifiedUser() {
     const user = getAuth(getFirebaseApp()).currentUser;
 
     if (!user) {
-        throw new Error('Debes iniciar sesión para acceder a tus tareas.');
+        throw new Error(
+            'Debes iniciar sesión para acceder a tus tareas.',
+        );
     }
 
     if (!user.emailVerified) {
-        throw new Error('Debes verificar tu correo para acceder a tus tareas.');
+        throw new Error(
+            'Debes verificar tu correo para acceder a tus tareas.',
+        );
     }
 
     return user;
 }
 
 function getTasksCollection(uid: string) {
-    return collection(getFirestoreDb(), 'users', uid, 'tasks');
+    return collection(
+        getFirestoreDb(),
+        'users',
+        uid,
+        'tasks',
+    );
 }
+
+const pendingTaskLoads = new Map<string, Promise<Task[]>>();
 
 export async function createFirestoreTask(
     input: CreateTaskInput,
@@ -73,11 +92,46 @@ export async function createFirestoreTask(
 
 export async function getAllFirestoreTasks(): Promise<Task[]> {
     const user = getVerifiedUser();
-    const snapshot = await getDocs(getTasksCollection(user.uid));
 
-    return snapshot.docs.map((taskDoc) =>
-        fromFirestoreTaskData(taskDoc.id, taskDoc.data()),
-    );
+    // Compartir una consulta pendiente para el mismo usuario
+    // y evitar solicitudes duplicadas a Firestore.
+    const existingRequest = pendingTaskLoads.get(user.uid);
+
+    if (existingRequest) {
+        return existingRequest;
+    }
+
+    const request = (async (): Promise<Task[]> => {
+        // Firestore Lite se utiliza para consultar
+        // y administrar las tareas del usuario.
+        const tasksCollection = collection(
+            getFirestoreDb(),
+            'users',
+            user.uid,
+            'tasks',
+        );
+
+        const snapshot = await getDocs(tasksCollection);
+
+        return snapshot.docs.map((taskDoc) =>
+            fromFirestoreTaskData(
+                taskDoc.id,
+                taskDoc.data(),
+            ),
+        );
+    })();
+
+    pendingTaskLoads.set(user.uid, request);
+
+    try {
+        return await request;
+    } finally {
+        // Permitir nuevas consultas después de completar
+        // o fallar la solicitud actual.
+        if (pendingTaskLoads.get(user.uid) === request) {
+            pendingTaskLoads.delete(user.uid);
+        }
+    }
 }
 
 export async function updateFirestoreTask(
@@ -87,17 +141,25 @@ export async function updateFirestoreTask(
     const user = getVerifiedUser();
 
     if (!taskId.trim()) {
-        throw new Error('El identificador de la tarea no es válido.');
+        throw new Error(
+            'El identificador de la tarea no es válido.',
+        );
     }
 
-    const taskRef = doc(getTasksCollection(user.uid), taskId);
+    const taskRef = doc(
+        getTasksCollection(user.uid),
+        taskId,
+    );
+
     const db = getFirestoreDb();
 
     await runTransaction(db, async (transaction) => {
         const snapshot = await transaction.get(taskRef);
 
         if (!snapshot.exists()) {
-            throw new Error('La tarea no existe o ya fue eliminada.');
+            throw new Error(
+                'La tarea no existe o ya fue eliminada.',
+            );
         }
 
         const current = fromFirestoreTaskData(
@@ -105,14 +167,36 @@ export async function updateFirestoreTask(
             snapshot.data(),
         );
 
-        const normalizedPatch = normalizeFirestoreTaskPatch(patch);
+        const normalizedPatch =
+            normalizeFirestoreTaskPatch(patch);
 
-        validateUpdatedFirestoreTaskData(current, normalizedPatch);
+        validateUpdatedFirestoreTaskData(
+            current,
+            normalizedPatch,
+        );
 
+        // Firestore debe almacenar las fechas programadas
+        // como Timestamp o null, nunca como cadenas.
         const updates = Object.fromEntries(
-            Object.entries(normalizedPatch).filter(
-                ([, value]) => value !== undefined,
-            ),
+            Object.entries(normalizedPatch)
+                .filter(([, value]) => value !== undefined)
+                .map(([key, value]) => {
+                    if (
+                        (key === 'startDate' || key === 'dueDate') &&
+                        typeof value === 'string'
+                    ) {
+                        return [
+                            key,
+                            Timestamp.fromDate(
+                                new Date(
+                                    `${value}T00:00:00.000Z`,
+                                ),
+                            ),
+                        ];
+                    }
+
+                    return [key, value];
+                }),
         );
 
         transaction.update(taskRef, {
@@ -141,8 +225,12 @@ export async function deleteFirestoreTask(
     const user = getVerifiedUser();
 
     if (!taskId.trim()) {
-        throw new Error('El identificador de la tarea no es válido.');
+        throw new Error(
+            'El identificador de la tarea no es válido.',
+        );
     }
 
-    await deleteDoc(doc(getTasksCollection(user.uid), taskId));
+    await deleteDoc(
+        doc(getTasksCollection(user.uid), taskId),
+    );
 }

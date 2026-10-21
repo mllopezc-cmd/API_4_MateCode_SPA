@@ -16,6 +16,7 @@ const {
     toFirestoreTaskDataMock,
     validateUpdatedFirestoreTaskDataMock,
     transactionUpdateMock,
+    timestampFromDateMock,
 } = vi.hoisted(() => ({
     collectionMock: vi.fn(),
     deleteDocMock: vi.fn(),
@@ -32,9 +33,13 @@ const {
     toFirestoreTaskDataMock: vi.fn(),
     validateUpdatedFirestoreTaskDataMock: vi.fn(),
     transactionUpdateMock: vi.fn(),
+    timestampFromDateMock: vi.fn(),
 }));
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('firebase/firestore/lite', () => ({
+    Timestamp: {
+        fromDate: timestampFromDateMock,
+    },
     collection: collectionMock,
     deleteDoc: deleteDocMock,
     doc: docMock,
@@ -123,6 +128,10 @@ describe('firestoreTaskService', () => {
         collectionMock.mockReturnValue(taskCollection);
         docMock.mockReturnValue(taskRef);
         serverTimestampMock.mockReturnValue({ serverTimestamp: true });
+        timestampFromDateMock.mockImplementation((date: Date) => ({
+            kind: 'firestore-timestamp',
+            iso: date.toISOString(),
+        }));
 
         toFirestoreTaskDataMock.mockReturnValue(taskData);
         fromFirestoreTaskDataMock.mockReturnValue(task);
@@ -242,6 +251,74 @@ describe('firestoreTaskService', () => {
         expect(result).toEqual([task]);
     });
 
+    it('reutiliza una consulta pendiente para el mismo usuario', async () => {
+        let resolveSnapshot!: (value: {
+            docs: ReturnType<typeof makeSnapshot>[];
+        }) => void;
+
+        const pendingSnapshot = new Promise<{
+            docs: ReturnType<typeof makeSnapshot>[];
+        }>((resolve) => {
+            resolveSnapshot = resolve;
+        });
+
+        getDocsMock.mockReturnValueOnce(pendingSnapshot);
+
+        const firstRequest = getAllFirestoreTasks();
+        const secondRequest = getAllFirestoreTasks();
+
+        expect(getDocsMock).toHaveBeenCalledTimes(1);
+
+        resolveSnapshot({
+            docs: [
+                makeSnapshot('task-123', {
+                    ...taskData,
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                }),
+            ],
+        });
+
+        const [firstResult, secondResult] = await Promise.all([
+            firstRequest,
+            secondRequest,
+        ]);
+
+        expect(firstResult).toEqual([task]);
+        expect(secondResult).toEqual([task]);
+        expect(getDocsMock).toHaveBeenCalledTimes(1);
+
+        // Una vez finalizada, una nueva consulta
+        // debe obtener datos actualizados.
+        getDocsMock.mockResolvedValueOnce({
+            docs: [],
+        });
+
+        const thirdResult = await getAllFirestoreTasks();
+
+        expect(thirdResult).toEqual([]);
+        expect(getDocsMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('permite repetir una consulta después de un fallo', async () => {
+        getDocsMock
+            .mockRejectedValueOnce(
+                new Error('Error temporal de Firestore'),
+            )
+            .mockResolvedValueOnce({
+                docs: [],
+            });
+
+        await expect(
+            getAllFirestoreTasks(),
+        ).rejects.toThrow('Error temporal de Firestore');
+
+        const result = await getAllFirestoreTasks();
+
+        expect(result).toEqual([]);
+        expect(getDocsMock).toHaveBeenCalledTimes(2);
+    });
+
     it('rechaza actualizar un identificador vacío', async () => {
         await expect(
             updateFirestoreTask('   ', { title: 'Nuevo título' }),
@@ -293,6 +370,82 @@ describe('firestoreTaskService', () => {
 
         expect(serverTimestampMock).toHaveBeenCalledOnce();
         expect(getDocMock).toHaveBeenCalledWith(taskRef);
+    });
+
+    it('convierte startDate y dueDate a Timestamp antes de actualizar Firestore', async () => {
+        const patch = {
+            startDate: '2026-10-21',
+            dueDate: '2026-10-25',
+        };
+
+        await updateFirestoreTask('task-123', patch);
+
+        expect(
+            validateUpdatedFirestoreTaskDataMock,
+        ).toHaveBeenCalledWith(task, patch);
+
+        expect(timestampFromDateMock).toHaveBeenCalledTimes(2);
+
+        expect(timestampFromDateMock).toHaveBeenNthCalledWith(
+            1,
+            new Date('2026-10-21T00:00:00.000Z'),
+        );
+
+        expect(timestampFromDateMock).toHaveBeenNthCalledWith(
+            2,
+            new Date('2026-10-25T00:00:00.000Z'),
+        );
+
+        expect(transactionUpdateMock).toHaveBeenCalledWith(
+            taskRef,
+            {
+                startDate: {
+                    kind: 'firestore-timestamp',
+                    iso: '2026-10-21T00:00:00.000Z',
+                },
+                dueDate: {
+                    kind: 'firestore-timestamp',
+                    iso: '2026-10-25T00:00:00.000Z',
+                },
+                updatedAt: { serverTimestamp: true },
+            },
+        );
+    });
+
+    it('conserva null al eliminar las fechas programadas', async () => {
+        const patch = {
+            startDate: null,
+            dueDate: null,
+        };
+
+        await updateFirestoreTask('task-123', patch);
+
+        expect(timestampFromDateMock).not.toHaveBeenCalled();
+
+        expect(transactionUpdateMock).toHaveBeenCalledWith(
+            taskRef,
+            {
+                startDate: null,
+                dueDate: null,
+                updatedAt: { serverTimestamp: true },
+            },
+        );
+    });
+
+    it('no modifica las fechas al actualizar solamente el estado', async () => {
+        await updateFirestoreTask('task-123', {
+            status: 'completada',
+        });
+
+        expect(timestampFromDateMock).not.toHaveBeenCalled();
+
+        expect(transactionUpdateMock).toHaveBeenCalledWith(
+            taskRef,
+            {
+                status: 'completada',
+                updatedAt: { serverTimestamp: true },
+            },
+        );
     });
 
     it('rechaza eliminar un identificador vacío', async () => {
