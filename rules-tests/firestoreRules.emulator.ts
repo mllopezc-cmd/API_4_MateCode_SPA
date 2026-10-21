@@ -422,4 +422,45 @@ describe('Reglas de seguridad de Firestore para tareas', () => {
             ),
         );
     });
+
+    it('impide leer al cliente los límites privados de correo', async () => {
+        const path =
+            'users/alice/_server/summaryEmailLimit';
+
+        await testEnv.withSecurityRulesDisabled(
+            async (context) => {
+                await setDoc(
+                    doc(context.firestore(), path),
+                    { requestTimesMs: [1_000] },
+                );
+            },
+        );
+
+        await assertFails(
+            getDoc(doc(aliceDb(), path)),
+        );
+
+        await assertFails(
+            getDoc(doc(bobDb(), path)),
+        );
+    });
+
+    it('impide modificar límites privados desde el cliente', async () => {
+        const path =
+            'users/alice/_server/summaryEmailLimit';
+
+        await assertFails(
+            setDoc(
+                doc(aliceDb(), path),
+                { requestTimesMs: [] },
+            ),
+        );
+
+        await assertFails(
+            setDoc(
+                doc(bobDb(), path),
+                { requestTimesMs: [] },
+            ),
+        );
+    });
 });

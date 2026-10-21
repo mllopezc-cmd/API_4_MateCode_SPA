@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { TaskEmailSummary } from '../components/TaskEmailSummary';
 import type {
     CreateTaskInput,
     Task,
@@ -760,6 +761,14 @@ export default function TasksPage() {
             <p>
                 Organiza tus actividades y da seguimiento a tu progreso.
             </p>
+            {import.meta.env.VITE_ENABLE_EMAIL_SUMMARY === 'true' &&
+                isAuthenticated &&
+                user && (
+                    <TaskEmailSummary
+                        key={user.uid}
+                        user={user}
+                    />
+                )}
 
             {success && (
                 <p
