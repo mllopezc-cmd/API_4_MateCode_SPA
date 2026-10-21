@@ -4,9 +4,7 @@ import {
     SendEmailCommand,
 } from '@aws-sdk/client-sesv2';
 
-import type {
-    buildTaskSummaryEmail,
-} from './_taskEmailContent';
+import type { buildTaskSummaryEmail } from './_taskEmailContent.js';
 
 type TaskEmailContent = Pick<
     ReturnType<typeof buildTaskSummaryEmail>,

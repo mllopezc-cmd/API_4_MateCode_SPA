@@ -1,10 +1,10 @@
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 
-import { getServerFirebaseApp } from './_firebaseAdmin';
-import { buildTaskSummaryEmail } from './_taskEmailContent';
-import { reserveSummaryEmailQuota } from './_emailRateLimit';
-import { sendTaskSummaryEmail } from './_sesEmailSender';
+import { getServerFirebaseApp } from './_firebaseAdmin.js';
+import { buildTaskSummaryEmail } from './_taskEmailContent.js';
+import { reserveSummaryEmailQuota } from './_emailRateLimit.js';
+import { sendTaskSummaryEmail } from './_sesEmailSender.js';
 
 type SummaryResponse = {
     ok: boolean;
@@ -175,7 +175,7 @@ export default {
                 user.uid,
             );
 
-            if (!quota.allowed) {
+            if (quota.allowed === false) {
                 return jsonResponse(
                     429,
                     {

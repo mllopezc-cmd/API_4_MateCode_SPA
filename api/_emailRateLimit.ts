@@ -25,7 +25,10 @@ export function evaluateEmailRateLimit(
     nowMs: number,
 ): EmailRateLimitResult {
     const recent = recentRequests(timestamps, nowMs);
-    const lastRequest = recent.at(-1);
+    const lastRequest =
+        recent.length === 0
+            ? undefined
+            : recent[recent.length - 1];
 
     const cooldownRemaining =
         lastRequest === undefined
