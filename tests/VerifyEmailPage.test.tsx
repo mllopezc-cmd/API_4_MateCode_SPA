@@ -7,7 +7,7 @@ import {
     useAuth,
     type AuthContextType,
 } from '../src/context/AuthContext';
-import VerifyEmailPage from '../src/pages/VerifyEmailPage';
+import VerifyEmailPage from '../src/pages/auth/VerifyEmailPage';
 
 vi.mock('../src/context/AuthContext', () => ({
     useAuth: vi.fn(),

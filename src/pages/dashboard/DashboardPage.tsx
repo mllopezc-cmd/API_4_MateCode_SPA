@@ -7,13 +7,13 @@ import {
 
 import { Link } from 'react-router-dom';
 
-import { useAuth } from '../context/AuthContext';
-import { getAllFirestoreTasks } from '../services/firestoreTaskService';
+import { useAuth } from '../../context/AuthContext';
+import { getAllFirestoreTasks } from '../../services/firestoreTaskService';
 
-import type { Task } from '../types/task';
+import type { Task } from '../../types/task';
 
-import { getDueDateStatus } from '../utils/taskScheduling';
-import { formatCalendarDate } from '../utils/dateFormatting';
+import { getDueDateStatus } from '../../utils/taskScheduling';
+import { formatCalendarDate } from '../../utils/dateFormatting';
 
 import './DashboardPremium.css';
 

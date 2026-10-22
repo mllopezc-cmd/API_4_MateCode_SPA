@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import {
     AuthServiceError,
     sendPasswordReset,
-} from '../services/authService';
+} from '../../services/authService';
 
 export default function RecoverPasswordPage() {
     const [email, setEmail] = useState('');

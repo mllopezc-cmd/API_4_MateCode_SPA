@@ -1,28 +1,29 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { TaskEmailSummary } from '../components/TaskEmailSummary';
+
+import { useAuth } from '../../context/AuthContext';
+import { TaskEmailSummary } from '../../components/TaskEmailSummary';
 
 import type {
     CreateTaskInput,
     Task,
     TaskPriority,
     TaskStatus,
-} from '../types/task';
+} from '../../types/task';
 
 import {
     createFirestoreTask,
     deleteFirestoreTask,
     getAllFirestoreTasks,
     updateFirestoreTask,
-} from '../services/firestoreTaskService';
+} from '../../services/firestoreTaskService';
 
 import {
     getAutomaticPriority,
     getDueDateStatus,
-} from '../utils/taskScheduling';
+} from '../../utils/taskScheduling';
 
-import { formatCalendarDate } from '../utils/dateFormatting';
+import { formatCalendarDate } from '../../utils/dateFormatting';
 
 import './TasksPremium.css';
 

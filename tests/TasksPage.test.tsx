@@ -8,7 +8,7 @@ import {
     within,
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import TasksPage from '../src/pages/TasksPage';
+import TasksPage from '../src/pages/tasks/TasksPage';
 import type { Task } from '../src/types/task';
 import { formatCalendarDate } from '../src/utils/dateFormatting';
 

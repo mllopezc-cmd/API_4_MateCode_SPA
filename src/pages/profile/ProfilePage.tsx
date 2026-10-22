@@ -6,20 +6,20 @@ import {
 } from 'react';
 
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 import {
     changeAccountPassword,
     getPasswordValidationError,
     updateAccountDisplayName,
-} from '../services/authService';
+} from '../../services/authService';
 
 import {
     EMPTY_PROFILE_CONTACT,
     getProfileContact,
     saveProfileContact,
     type ProfileContact,
-} from '../services/firestoreProfileService';
+} from '../../services/firestoreProfileService';
 
 import './ProfilePremium.css';
 import './ProfileContact.css';

@@ -5,8 +5,8 @@ import {
     useNavigate,
 } from 'react-router-dom';
 
-import { AuthServiceError } from '../services/authService';
-import { useAuth } from '../context/AuthContext';
+import { AuthServiceError } from '../../services/authService';
+import { useAuth } from '../../context/AuthContext';
 
 interface VerificationLocationState {
     email?: unknown;

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 
-import { useTheme } from '../theme/ThemeContext';
-import type { Theme } from '../theme/theme';
+import { useTheme } from '../../theme/ThemeContext';
+import type { Theme } from '../../theme/theme';
 
 import './SettingsPage.css';
 

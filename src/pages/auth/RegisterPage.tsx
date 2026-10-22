@@ -5,7 +5,7 @@ import {
     AuthServiceError,
     getPasswordValidationError,
     register,
-} from '../services/authService';
+} from '../../services/authService';
 
 export default function RegisterPage() {
     const navigate = useNavigate();

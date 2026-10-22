@@ -15,15 +15,15 @@ import { useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivateLayout from './components/PrivateLayout';
 
-import HomePage from './pages/HomePage';
-import AboutPage from './pages/AboutPage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import VerifyEmailPage from './pages/VerifyEmailPage';
-import ContactPage from './pages/ContactPage';
-import HelpPage from './pages/HelpPage';
-import NotFoundPage from './pages/NotFoundPage';
-import RecoverPasswordPage from './pages/RecoverPasswordPage';
+import HomePage from './pages/public/HomePage';
+import AboutPage from './pages/public/AboutPage';
+import LoginPage from './pages/auth/LoginPage';
+import RegisterPage from './pages/auth/RegisterPage';
+import VerifyEmailPage from './pages/auth/VerifyEmailPage';
+import ContactPage from './pages/public/ContactPage';
+import HelpPage from './pages/public/HelpPage';
+import NotFoundPage from './pages/public/NotFoundPage';
+import RecoverPasswordPage from './pages/auth/RecoverPasswordPage';
 
 import { ThemeProvider } from './theme/ThemeProvider';
 import ThemeToggle from './components/ThemeToggle';
@@ -44,19 +44,19 @@ import './components/PrivateLayout.css';
  */
 
 const DashboardPage = lazy(
-  () => import('./pages/DashboardPage'),
+  () => import('./pages/dashboard/DashboardPage'),
 );
 
 const TasksPage = lazy(
-  () => import('./pages/TasksPage'),
+  () => import('./pages/tasks/TasksPage'),
 );
 
 const ProfilePage = lazy(
-  () => import('./pages/ProfilePage'),
+  () => import('./pages/profile/ProfilePage'),
 );
 
 const SettingsPage = lazy(
-  () => import('./pages/SettingsPage'),
+  () => import('./pages/settings/SettingsPage'),
 );
 
 function SessionLoading() {

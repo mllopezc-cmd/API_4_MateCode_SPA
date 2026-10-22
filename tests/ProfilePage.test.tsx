@@ -17,7 +17,7 @@ import {
     vi,
 } from 'vitest';
 
-import ProfilePage from '../src/pages/ProfilePage';
+import ProfilePage from '../src/pages/profile/ProfilePage';
 
 const mocks = vi.hoisted(() => ({
     updateName: vi.fn(),

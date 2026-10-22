@@ -22,7 +22,7 @@ import {
     vi,
 } from 'vitest';
 
-import DashboardPage from '../src/pages/DashboardPage';
+import DashboardPage from '../src/pages/dashboard/DashboardPage';
 
 import { useAuth } from '../src/context/AuthContext';
 

@@ -16,7 +16,7 @@ import {
     vi,
 } from 'vitest';
 
-import SettingsPage from '../src/pages/SettingsPage';
+import SettingsPage from '../src/pages/settings/SettingsPage';
 import ThemeToggle from '../src/components/ThemeToggle';
 import { ThemeProvider } from '../src/theme/ThemeProvider';
 import { THEME_STORAGE_KEY } from '../src/theme/theme';

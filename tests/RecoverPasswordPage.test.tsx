@@ -6,7 +6,7 @@ import {
     AuthServiceError,
     sendPasswordReset,
 } from '../src/services/authService';
-import RecoverPasswordPage from '../src/pages/RecoverPasswordPage';
+import RecoverPasswordPage from '../src/pages/auth/RecoverPasswordPage';
 
 vi.mock('../src/services/authService', () => {
     class MockAuthServiceError extends Error { }

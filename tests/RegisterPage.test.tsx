@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { AuthServiceError } from '../src/services/authService';
-import RegisterPage from '../src/pages/RegisterPage';
+import RegisterPage from '../src/pages/auth/RegisterPage';
 
 const mocks = vi.hoisted(() => ({
     navigate: vi.fn(),
