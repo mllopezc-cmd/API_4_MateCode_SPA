@@ -15,7 +15,7 @@
     "@aws-sdk/client-sesv2": "^3.1154.0",
     "@vercel/oidc-aws-credentials-provider": "^3.3.14",
     "firebase": "^13.0.0",
-    "firebase-admin": "13.10.0",
+    "firebase-admin": "14.5.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4"
