@@ -1,0 +1,175 @@
+/*
+ * MateCode Premium Cyber-Executive
+ * Etapa 8 - Bloque 4B (cierre UX)
+ * Datos de contacto: resumen + edición contextual.
+ */
+
+.profile-page--premium .profile-contact-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+}
+
+.profile-page--premium .profile-field--address {
+    grid-column: 1 / -1;
+}
+
+.profile-page--premium .profile-field textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 96px;
+    padding: 12px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 11px;
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.98rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.profile-page--premium .profile-field textarea:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.profile-page--premium .profile-field textarea:disabled {
+    opacity: 0.65;
+}
+
+.profile-page--premium .profile-contact-note {
+    margin: 15px 0 0;
+    color: var(--color-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.profile-page--premium .profile-contact-load-error {
+    display: grid;
+    justify-items: start;
+    gap: 14px;
+}
+
+/* Datos confirmados: inmediatamente debajo del encabezado de sección. */
+.profile-page--premium .profile-contact-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 20px;
+    min-width: 0;
+}
+
+.profile-page--premium .profile-contact-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    min-width: 0;
+    padding: 19px;
+    border: 1px solid var(--profile-line);
+    border-radius: 13px;
+    background: var(--profile-inner);
+}
+
+.profile-page--premium .profile-contact-summary__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.profile-page--premium .profile-contact-summary__icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    border: 1px solid color-mix(in srgb, var(--profile-violet) 34%, var(--profile-line));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--profile-violet) 9%, var(--profile-inner));
+    color: var(--profile-violet);
+}
+
+.profile-page--premium .profile-contact-summary__content {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+}
+
+.profile-page--premium .profile-contact-summary__label {
+    color: var(--color-muted);
+    font-size: 0.86rem;
+    font-weight: 650;
+}
+
+.profile-page--premium .profile-contact-summary__value {
+    color: var(--color-text);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.profile-page--premium .profile-contact-summary__empty {
+    color: var(--color-muted);
+    font-size: 0.95rem;
+    font-style: italic;
+}
+
+.profile-page--premium .profile-contact-overview__actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.profile-page--premium .profile-contact-edit-button {
+    gap: 9px;
+    white-space: nowrap;
+}
+
+.profile-page--premium .profile-contact-edit-button svg {
+    width: 17px;
+    height: 17px;
+}
+
+.profile-page--premium .profile-contact-editor__title {
+    margin: 0 0 18px;
+    color: var(--color-text);
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+@media (max-width: 850px) {
+    .profile-page--premium .profile-contact-overview {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+    }
+
+    .profile-page--premium .profile-contact-overview__actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 700px) {
+
+    .profile-page--premium .profile-contact-fields,
+    .profile-page--premium .profile-contact-summary {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .profile-page--premium .profile-contact-summary {
+        padding: 16px;
+    }
+
+    .profile-page--premium .profile-contact-overview__actions,
+    .profile-page--premium .profile-contact-overview__actions .profile-button {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .profile-page--premium .profile-contact-edit-button {
+        transition: none;
+    }
+}

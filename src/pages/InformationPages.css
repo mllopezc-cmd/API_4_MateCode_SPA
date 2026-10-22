@@ -1,0 +1,445 @@
+/*
+ * MateCode Premium Cyber-Executive
+ * Etapa 8 - Bloque 4A
+ *
+ * Ayuda y Contacto.
+ *
+ * Compatible con:
+ * - Tema oscuro y claro.
+ * - PrivateLayout.
+ * - Páginas públicas.
+ * - Navegación móvil.
+ */
+
+.info-page {
+    --info-accent: var(--color-accent-magenta);
+    --info-border: var(--color-border);
+    --info-panel: var(--color-surface);
+    --info-inner: var(--color-surface-elevated);
+
+    min-width: 0;
+    color: var(--color-text);
+}
+
+/* Lienzo */
+
+.page-shell.info-page,
+.matecode-shell__content .page-shell.info-page {
+    width: min(calc(100% - 40px), 1060px);
+    max-width: 1060px;
+
+    margin: 26px auto 40px;
+    padding: 0;
+
+    border: none;
+    border-radius: 0;
+
+    background: transparent;
+    box-shadow: none;
+}
+
+/* Cabecera */
+
+.info-page .info-page__hero {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+
+    margin: 0;
+    padding: clamp(26px, 4vw, 42px);
+
+    border: 1px solid var(--info-border);
+    border-radius: 20px;
+
+    background:
+        radial-gradient(ellipse at 95% 10%,
+            rgb(216 23 113 / 13%),
+            transparent 55%),
+        var(--info-panel);
+
+    box-shadow: 0 12px 30px rgb(0 0 0 / 8%);
+}
+
+.info-page__eyebrow {
+    display: block;
+
+    margin-bottom: 12px;
+
+    color: var(--color-link);
+
+    font-size: 0.73rem;
+    font-weight: 750;
+    line-height: 1.5;
+    letter-spacing: 0.12em;
+}
+
+.info-page .info-page__hero h1 {
+    margin: 0 0 13px;
+
+    color: var(--color-text);
+
+    font-size: clamp(2rem, 4.5vw, 2.9rem);
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.045em;
+}
+
+.info-page .info-page__hero p {
+    max-width: 700px;
+    margin: 0;
+
+    color: var(--color-muted);
+
+    font-size: 1rem;
+    line-height: 1.7;
+}
+
+.info-page__hero-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+
+    gap: 12px;
+    margin-top: 24px;
+}
+
+/* Acciones */
+
+.info-page .info-page__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    min-height: 46px;
+    padding: 11px 19px;
+
+    border: 1px solid transparent;
+    border-radius: 11px;
+
+    font-size: 0.94rem;
+    font-weight: 700;
+    line-height: 1.3;
+
+    text-align: center;
+    text-decoration: none;
+
+    transition:
+        background-color 160ms ease,
+        border-color 160ms ease,
+        box-shadow 160ms ease,
+        transform 160ms ease;
+}
+
+.info-page .info-page__button--primary {
+    background: linear-gradient(115deg,
+            #c4124d,
+            #e01973 68%,
+            #db592c);
+
+    color: #fff;
+
+    box-shadow: 0 7px 19px rgb(211 21 88 / 16%);
+}
+
+.info-page .info-page__button--primary:hover {
+    color: #fff;
+    transform: translateY(-2px);
+
+    box-shadow: 0 12px 25px rgb(211 21 88 / 24%);
+}
+
+.info-page .info-page__button--outline {
+    border-color: var(--info-border);
+
+    background: var(--info-inner);
+    color: var(--color-text);
+}
+
+.info-page .info-page__button--outline:hover {
+    border-color: var(--info-accent);
+
+    background: var(--color-soft-hover);
+    color: var(--color-text);
+
+    transform: translateY(-2px);
+}
+
+/* Contenido informativo */
+
+.info-page__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    gap: 16px;
+    margin-top: 18px;
+}
+
+.info-page .info-page__card {
+    min-width: 0;
+
+    margin: 0;
+    padding: clamp(20px, 3vw, 27px);
+
+    border: 1px solid var(--info-border);
+    border-radius: 16px;
+
+    background: var(--info-panel);
+
+    box-shadow: 0 8px 24px rgb(0 0 0 / 5%);
+}
+
+.info-page .info-page__card--wide {
+    grid-column: 1 / -1;
+}
+
+.info-page__card-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    margin-bottom: 17px;
+}
+
+.info-page__step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    flex: 0 0 40px;
+
+    width: 40px;
+    height: 40px;
+
+    border: 1px solid color-mix(in srgb,
+            var(--info-accent) 40%,
+            var(--info-border));
+
+    border-radius: 12px;
+
+    background:
+        color-mix(in srgb,
+            var(--info-accent) 10%,
+            var(--info-inner));
+
+    color: var(--color-link);
+
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+}
+
+.info-page .info-page__card h2 {
+    margin: 0;
+
+    color: var(--color-text);
+
+    font-size: clamp(1.08rem, 1.8vw, 1.3rem);
+    font-weight: 760;
+    line-height: 1.35;
+    letter-spacing: -0.025em;
+}
+
+.info-page .info-page__card p {
+    margin: 0 0 13px;
+
+    color: var(--color-text);
+
+    font-size: 0.97rem;
+    line-height: 1.72;
+}
+
+.info-page .info-page__card p:last-child {
+    margin-bottom: 0;
+}
+
+.info-page .info-page__card .info-page__muted {
+    color: var(--color-muted);
+}
+
+/* Enlaces contextuales */
+
+.info-page__inline-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+
+    gap: 12px 19px;
+    margin-top: 16px;
+}
+
+.info-page .info-page__inline-link {
+    display: inline-flex;
+    align-items: center;
+
+    min-height: 40px;
+
+    color: var(--color-link);
+
+    font-size: 0.94rem;
+    font-weight: 700;
+    line-height: 1.45;
+
+    text-decoration: none;
+}
+
+.info-page .info-page__inline-link:hover {
+    color: var(--color-link-hover);
+    text-decoration: underline;
+}
+
+/* Panel inferior de ayuda */
+
+.info-page .info-page__support {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 22px;
+
+    margin-top: 18px;
+    padding: clamp(20px, 3vw, 28px);
+
+    border: 1px solid var(--info-border);
+    border-radius: 16px;
+
+    background: var(--info-inner);
+}
+
+.info-page .info-page__support h2 {
+    margin: 0 0 10px;
+
+    color: var(--color-text);
+
+    font-size: 1.2rem;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.info-page .info-page__support p {
+    max-width: 650px;
+    margin: 0;
+
+    color: var(--color-muted);
+
+    font-size: 0.94rem;
+    line-height: 1.6;
+}
+
+.info-page__support .info-page__button {
+    flex: 0 0 auto;
+}
+
+/* Regreso */
+
+.info-page__footer-nav {
+    display: flex;
+    align-items: center;
+
+    margin-top: 22px;
+}
+
+.info-page .info-page__back-link {
+    display: inline-flex;
+    align-items: center;
+
+    min-height: 44px;
+
+    color: var(--color-link);
+
+    font-size: 0.93rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.info-page .info-page__back-link:hover {
+    color: var(--color-link-hover);
+    text-decoration: underline;
+}
+
+/* Modo claro */
+
+:root[data-theme='light'] .info-page {
+    --info-accent: #c4124d;
+}
+
+:root[data-theme='light'] .info-page .info-page__hero {
+    background:
+        radial-gradient(ellipse at 95% 10%,
+            rgb(196 18 77 / 6%),
+            transparent 55%),
+        var(--info-panel);
+
+    box-shadow: 0 10px 28px rgb(27 24 48 / 6%);
+}
+
+/* Tablet y teléfono */
+
+@media (max-width: 760px) {
+    .info-page__grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 13px;
+    }
+
+    .info-page .info-page__card--wide {
+        grid-column: auto;
+    }
+
+    .info-page .info-page__support {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .info-page__support .info-page__button {
+        align-self: flex-start;
+    }
+}
+
+@media (max-width: 600px) {
+
+    .page-shell.info-page,
+    .matecode-shell__content .page-shell.info-page {
+        width: calc(100% - 24px);
+
+        margin: 14px auto 26px;
+        padding: 0;
+    }
+
+    .info-page .info-page__hero {
+        padding: 25px 20px;
+        border-radius: 17px;
+    }
+
+    .info-page .info-page__hero h1 {
+        font-size: clamp(1.9rem, 8vw, 2.3rem);
+    }
+
+    .info-page .info-page__card {
+        padding: 20px 17px;
+    }
+
+    .info-page__hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .info-page__hero-actions .info-page__button {
+        width: 100%;
+    }
+}
+
+/* Accesibilidad */
+
+.info-page a:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .info-page .info-page__button {
+        transition: none;
+    }
+
+    .info-page .info-page__button:hover {
+        transform: none;
+    }
+}

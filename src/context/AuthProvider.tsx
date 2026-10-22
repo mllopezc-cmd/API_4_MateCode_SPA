@@ -4,6 +4,7 @@ import {
     useState,
     type ReactNode,
 } from 'react';
+
 import {
     getAuth,
     onAuthStateChanged,
@@ -11,6 +12,7 @@ import {
 } from 'firebase/auth';
 
 import { getFirebaseApp } from '../lib/firebase';
+
 import {
     login as loginService,
     logout as logoutService,
@@ -37,7 +39,9 @@ function toError(value: unknown): Error {
     );
 }
 
-function getUserStatus(user: User | null): AuthStatus {
+function getUserStatus(
+    user: User | null,
+): AuthStatus {
     if (!user) {
         return 'unauthenticated';
     }
@@ -52,13 +56,33 @@ export function AuthProvider({
 }: AuthProviderProps) {
     const [status, setStatus] =
         useState<AuthStatus>('loading');
-    const [user, setUser] = useState<User | null>(null);
-    const [error, setError] = useState<Error | null>(null);
-    const [retryCount, setRetryCount] = useState(0);
+
+    const [user, setUser] =
+        useState<User | null>(null);
+
+    const [error, setError] =
+        useState<Error | null>(null);
+
+    const [retryCount, setRetryCount] =
+        useState(0);
+
+    /*
+     * Bloque 4B.
+     *
+     * Firebase puede actualizar el mismo objeto
+     * User después de updateProfile o reload.
+     *
+     * Esta revisión fuerza una nueva publicación
+     * del contexto sin alterar el tipo User.
+     */
+    const [, setProfileRevision] = useState(0);
 
     useEffect(() => {
         let active = true;
-        let unsubscribe: (() => void) | undefined;
+
+        let unsubscribe:
+            | (() => void)
+            | undefined;
 
         try {
             const auth = getAuth(getFirebaseApp());
@@ -71,7 +95,9 @@ export function AuthProvider({
                     }
 
                     setUser(firebaseUser);
-                    setStatus(getUserStatus(firebaseUser));
+                    setStatus(
+                        getUserStatus(firebaseUser),
+                    );
                     setError(null);
                 },
                 (cause) => {
@@ -115,16 +141,24 @@ export function AuthProvider({
     }, [retryCount]);
 
     const login = useCallback(
-        async (email: string, password: string) => {
+        async (
+            email: string,
+            password: string,
+        ) => {
             const credential = await loginService(
                 email,
                 password,
             );
 
-            const authenticatedUser = credential.user;
+            const authenticatedUser =
+                credential.user;
 
             setUser(authenticatedUser);
-            setStatus(getUserStatus(authenticatedUser));
+
+            setStatus(
+                getUserStatus(authenticatedUser),
+            );
+
             setError(null);
 
             return credential;
@@ -132,67 +166,97 @@ export function AuthProvider({
         [],
     );
 
-    const logout = useCallback(async () => {
-        await logoutService();
+    const logout = useCallback(
+        async () => {
+            await logoutService();
 
-        setUser(null);
-        setStatus('unauthenticated');
-        setError(null);
-    }, []);
-
-    const sendVerificationEmail = useCallback(async () => {
-        const auth = getAuth(getFirebaseApp());
-        const currentUser = auth.currentUser;
-
-        if (!currentUser) {
-            throw new Error(
-                'Debes iniciar sesión para solicitar la verificación del correo.',
-            );
-        }
-
-        if (currentUser.emailVerified) {
-            throw new Error(
-                'Tu correo ya está verificado.',
-            );
-        }
-
-        await sendVerificationEmailService(currentUser);
-    }, []);
-
-    const refreshUser = useCallback(async () => {
-        const auth = getAuth(getFirebaseApp());
-        const currentUser = auth.currentUser;
-
-        if (!currentUser) {
             setUser(null);
             setStatus('unauthenticated');
             setError(null);
-            return;
-        }
+        },
+        [],
+    );
 
-        try {
-            await reloadCurrentUser(currentUser);
+    const sendVerificationEmail = useCallback(
+        async () => {
+            const auth = getAuth(getFirebaseApp());
+            const currentUser = auth.currentUser;
 
-            setUser(currentUser);
-            setStatus(getUserStatus(currentUser));
+            if (!currentUser) {
+                throw new Error(
+                    'Debes iniciar sesión para solicitar la verificación del correo.',
+                );
+            }
+
+            if (currentUser.emailVerified) {
+                throw new Error(
+                    'Tu correo ya está verificado.',
+                );
+            }
+
+            await sendVerificationEmailService(
+                currentUser,
+            );
+        },
+        [],
+    );
+
+    const refreshUser = useCallback(
+        async () => {
+            const auth = getAuth(getFirebaseApp());
+            const currentUser = auth.currentUser;
+
+            if (!currentUser) {
+                setUser(null);
+                setStatus('unauthenticated');
+                setError(null);
+                return;
+            }
+
+            try {
+                await reloadCurrentUser(currentUser);
+
+                setUser(currentUser);
+
+                setStatus(
+                    getUserStatus(currentUser),
+                );
+
+                setError(null);
+
+                /*
+                 * Publica el nombre y los datos nuevos
+                 * incluso si la referencia User no cambia.
+                 */
+                setProfileRevision(
+                    (current) => current + 1,
+                );
+            } catch (cause) {
+                throw toError(cause);
+            }
+        },
+        [],
+    );
+
+    const retryInitialization = useCallback(
+        () => {
+            setStatus('loading');
+            setUser(null);
             setError(null);
-        } catch (cause) {
-            throw toError(cause);
-        }
-    }, []);
 
-    const retryInitialization = useCallback(() => {
-        setStatus('loading');
-        setUser(null);
-        setError(null);
-        setRetryCount((current) => current + 1);
-    }, []);
+            setRetryCount(
+                (current) => current + 1,
+            );
+        },
+        [],
+    );
 
     const value = {
         status,
         user,
         error,
-        isAuthenticated: status === 'authenticated',
+        isAuthenticated:
+            status === 'authenticated',
         login,
         logout,
         sendVerificationEmail,

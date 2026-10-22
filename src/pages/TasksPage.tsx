@@ -2,23 +2,29 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { TaskEmailSummary } from '../components/TaskEmailSummary';
+
 import type {
     CreateTaskInput,
     Task,
     TaskPriority,
     TaskStatus,
 } from '../types/task';
+
 import {
     createFirestoreTask,
     deleteFirestoreTask,
     getAllFirestoreTasks,
     updateFirestoreTask,
 } from '../services/firestoreTaskService';
+
 import {
     getAutomaticPriority,
     getDueDateStatus,
 } from '../utils/taskScheduling';
+
 import { formatCalendarDate } from '../utils/dateFormatting';
+
+import './TasksPremium.css';
 
 const TASK_ROUTES = [
     { path: '/tareas', label: 'Todas las tareas' },
@@ -94,7 +100,10 @@ function getTaskStatusMessage(task: Task): string {
         : `Estado: ${statusMessage}`;
 }
 
-function getErrorMessage(error: unknown, fallback: string): string {
+function getErrorMessage(
+    error: unknown,
+    fallback: string,
+): string {
     return error instanceof Error ? error.message : fallback;
 }
 
@@ -119,22 +128,29 @@ export default function TasksPage() {
     const mountedRef = useRef(false);
     const loadRequestRef = useRef(0);
 
-    // Controla las tareas que tienen un cambio de estado pendiente.
-    const pendingStatusIdsRef = useRef<Set<string>>(new Set());
+    const pendingStatusIdsRef = useRef<Set<string>>(
+        new Set(),
+    );
+
     const statusOperationsRef = useRef<
         Map<string, PendingStatusOperation>
     >(new Map());
-    const [pendingStatusIds, setPendingStatusIds] = useState<Set<string>>(
-        () => new Set(),
-    );
+
+    const [pendingStatusIds, setPendingStatusIds] =
+        useState<Set<string>>(() => new Set());
 
     const [tasks, setTasks] = useState<Task[]>([]);
     const [isLoadingTasks, setIsLoadingTasks] = useState(true);
     const [tasksLoadFailed, setTasksLoadFailed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const [form, setForm] = useState<TaskForm>({ ...EMPTY_FORM });
-    const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+    const [form, setForm] = useState<TaskForm>({
+        ...EMPTY_FORM,
+    });
+
+    const [editingTaskId, setEditingTaskId] =
+        useState<string | null>(null);
+
     const statusFilter = getRouteStatus(location.pathname);
 
     const [priorityFilter, setPriorityFilter] =
@@ -143,10 +159,11 @@ export default function TasksPage() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
-    const startDateError =
-        error.includes('La fecha de inicio debe ser hoy o una fecha futura.')
-            ? error
-            : '';
+    const startDateError = error.includes(
+        'La fecha de inicio debe ser hoy o una fecha futura.',
+    )
+        ? error
+        : '';
 
     const dueDateError = error.includes(
         'La fecha límite debe ser igual o posterior a la fecha de inicio.',
@@ -177,7 +194,8 @@ export default function TasksPage() {
     );
 
     const hasActiveFilters =
-        statusFilter !== 'todas' || priorityFilter !== 'todas';
+        statusFilter !== 'todas' ||
+        priorityFilter !== 'todas';
 
     useEffect(() => {
         mountedRef.current = true;
@@ -191,14 +209,11 @@ export default function TasksPage() {
     useEffect(() => {
         let active = true;
 
-        // Invalidar inmediatamente las operaciones
-        // pendientes de la sesión anterior.
+        // Invalida las operaciones pendientes de otra sesión.
         sessionUserIdRef.current = userId;
         pendingStatusIdsRef.current.clear();
         statusOperationsRef.current.clear();
 
-        // Actualizar el estado visual fuera de la
-        // ejecución síncrona del efecto.
         void Promise.resolve().then(() => {
             if (
                 active &&
@@ -225,7 +240,6 @@ export default function TasksPage() {
             sessionUserIdRef.current === userId;
 
         async function initializeTasks() {
-            // Diferir actualizaciones iniciales fuera del efecto síncrono.
             await Promise.resolve();
 
             if (!active) {
@@ -281,6 +295,7 @@ export default function TasksPage() {
 
                 setTasks([]);
                 setTasksLoadFailed(true);
+
                 setError(
                     `${getErrorMessage(
                         caughtError,
@@ -347,6 +362,7 @@ export default function TasksPage() {
             setTasks([]);
             setTasksLoadFailed(true);
             setIsLoadingTasks(false);
+
             setError(
                 `${loadError} Puedes volver a intentarlo con el botón para recargar las tareas.`,
             );
@@ -375,7 +391,9 @@ export default function TasksPage() {
         setSuccess('');
     }
 
-    async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    async function handleSubmit(
+        event: FormEvent<HTMLFormElement>,
+    ) {
         event.preventDefault();
 
         if (
@@ -396,7 +414,9 @@ export default function TasksPage() {
         const todayString = new Date().toISOString().slice(0, 10);
 
         if (form.startDate && form.startDate < todayString) {
-            setError('La fecha de inicio debe ser hoy o una fecha futura.');
+            setError(
+                'La fecha de inicio debe ser hoy o una fecha futura.',
+            );
             return;
         }
 
@@ -516,7 +536,9 @@ export default function TasksPage() {
         );
 
         if (!originalTask) {
-            setError('No se encontró la tarea que estás editando.');
+            setError(
+                'No se encontró la tarea que estás editando.',
+            );
             return;
         }
 
@@ -539,7 +561,9 @@ export default function TasksPage() {
             return;
         }
 
-        const currentTask = tasks.find((task) => task.id === id);
+        const currentTask = tasks.find(
+            (task) => task.id === id,
+        );
 
         if (!currentTask || currentTask.status === taskStatus) {
             return;
@@ -550,7 +574,7 @@ export default function TasksPage() {
         setError('');
         setSuccess('');
 
-        // Reflejar el cambio de inmediato en la interfaz.
+        // Actualización visual inmediata.
         setTasks((currentTasks) =>
             currentTasks.map((task) =>
                 task.id === id
@@ -559,9 +583,9 @@ export default function TasksPage() {
             ),
         );
 
-        // Si esta tarea ya está guardando un estado anterior,
-        // conservar solo la última selección del usuario.
-        const existingOperation = statusOperationsRef.current.get(id);
+        // Conserva la última selección si ya hay un guardado.
+        const existingOperation =
+            statusOperationsRef.current.get(id);
 
         if (existingOperation) {
             existingOperation.desiredStatus = taskStatus;
@@ -576,7 +600,9 @@ export default function TasksPage() {
         statusOperationsRef.current.set(id, operation);
         pendingStatusIdsRef.current.add(id);
 
-        setPendingStatusIds(new Set(pendingStatusIdsRef.current));
+        setPendingStatusIds(
+            new Set(pendingStatusIdsRef.current),
+        );
 
         const canApplyResult = () =>
             mountedRef.current &&
@@ -588,8 +614,9 @@ export default function TasksPage() {
                 while (canApplyResult()) {
                     const statusToSave = operation.desiredStatus;
 
-                    // El último estado solicitado ya está confirmado.
-                    if (statusToSave === operation.confirmedTask.status) {
+                    if (
+                        statusToSave === operation.confirmedTask.status
+                    ) {
                         break;
                     }
 
@@ -603,12 +630,9 @@ export default function TasksPage() {
                             return;
                         }
 
-                        // Guardar la última versión confirmada.
                         operation.confirmedTask = savedTask;
 
-                        // Si el usuario cambió de nuevo el selector
-                        // durante la petición, conservar visualmente
-                        // esa selección más reciente.
+                        // Mantiene visible la selección más reciente.
                         setTasks((currentTasks) =>
                             currentTasks.map((task) =>
                                 task.id === id
@@ -620,22 +644,25 @@ export default function TasksPage() {
                             ),
                         );
 
-                        if (operation.desiredStatus === statusToSave) {
-                            setSuccess(STATUS_MESSAGES[statusToSave]);
+                        if (
+                            operation.desiredStatus === statusToSave
+                        ) {
+                            setSuccess(
+                                STATUS_MESSAGES[statusToSave],
+                            );
                         }
                     } catch (caughtError) {
                         if (!canApplyResult()) {
                             return;
                         }
 
-                        // Si hubo otra selección mientras se guardaba,
-                        // continuar con el estado más reciente.
-                        if (operation.desiredStatus !== statusToSave) {
+                        if (
+                            operation.desiredStatus !== statusToSave
+                        ) {
                             continue;
                         }
 
-                        // Si falla la última selección, recuperar
-                        // el último estado confirmado por Firestore.
+                        // Recupera el último estado confirmado.
                         setTasks((currentTasks) =>
                             currentTasks.map((task) =>
                                 task.id === id
@@ -655,7 +682,9 @@ export default function TasksPage() {
                     }
                 }
             } finally {
-                if (statusOperationsRef.current.get(id) === operation) {
+                if (
+                    statusOperationsRef.current.get(id) === operation
+                ) {
                     statusOperationsRef.current.delete(id);
                     pendingStatusIdsRef.current.delete(id);
 
@@ -671,7 +700,6 @@ export default function TasksPage() {
             }
         }
 
-        // Guardar en segundo plano, sin bloquear el selector.
         void persistStatusChanges();
     }
 
@@ -755,12 +783,13 @@ export default function TasksPage() {
     }
 
     return (
-        <main className="page-shell tasks-page">
+        <main className="page-shell tasks-page tasks-page--premium">
             <h1>{currentRoute?.label ?? 'Tareas'}</h1>
 
             <p>
                 Organiza tus actividades y da seguimiento a tu progreso.
             </p>
+
             {import.meta.env.VITE_ENABLE_EMAIL_SUMMARY === 'true' &&
                 isAuthenticated &&
                 user && (
@@ -805,16 +834,24 @@ export default function TasksPage() {
                 ))}
             </nav>
 
-            <section aria-labelledby="task-form-heading">
+            <section
+                id="nueva-tarea"
+                aria-labelledby="task-form-heading"
+            >
                 <h2 id="task-form-heading">
                     {editingTaskId !== null
                         ? 'Editar tarea'
                         : 'Crear una tarea'}
                 </h2>
 
-                <form onSubmit={handleSubmit} className="task-form">
+                <form
+                    onSubmit={handleSubmit}
+                    className="task-form"
+                >
                     <div className="task-form-field">
-                        <label htmlFor="task-title">Título *</label>
+                        <label htmlFor="task-title">
+                            Título *
+                        </label>
 
                         <input
                             id="task-title"
@@ -882,8 +919,8 @@ export default function TasksPage() {
                         />
 
                         <p id="task-start-date-help">
-                            Indica cuándo planeas comenzar. El estado de la tarea
-                            se actualizará manualmente.
+                            Indica cuándo planeas comenzar. El estado
+                            de la tarea se actualizará manualmente.
                         </p>
 
                         {startDateError && (
@@ -980,7 +1017,9 @@ export default function TasksPage() {
             </section>
 
             <section aria-labelledby="task-list-heading">
-                <h2 id="task-list-heading">Mis tareas</h2>
+                <h2 id="task-list-heading">
+                    Mis tareas
+                </h2>
 
                 <div className="task-filters">
                     <div className="task-form-field">
@@ -1080,8 +1119,9 @@ export default function TasksPage() {
                         </p>
 
                         <p>
-                            No podemos confirmar qué tareas están disponibles
-                            en este momento. Intenta cargar la lista nuevamente.
+                            No podemos confirmar qué tareas están
+                            disponibles en este momento. Intenta cargar
+                            la lista nuevamente.
                         </p>
 
                         <button
@@ -1096,7 +1136,10 @@ export default function TasksPage() {
                     </div>
                 ) : (
                     <>
-                        <p className="task-count" aria-live="polite">
+                        <p
+                            className="task-count"
+                            aria-live="polite"
+                        >
                             {visibleTasks.length}{' '}
                             {visibleTasks.length === 1
                                 ? 'tarea encontrada'
@@ -1124,10 +1167,9 @@ export default function TasksPage() {
                                         </p>
 
                                         <p>
-                                            Ninguna tarea coincide con los
-                                            filtros seleccionados. Restablece
-                                            los filtros para volver a ver todas
-                                            tus tareas.
+                                            Ninguna tarea coincide con los filtros
+                                            seleccionados. Restablece los filtros
+                                            para volver a ver todas tus tareas.
                                         </p>
                                     </>
                                 )}
@@ -1144,6 +1186,7 @@ export default function TasksPage() {
                                     return (
                                         <article
                                             className={`task-card task-card-${dueDateStatus}`}
+                                            data-task-status={task.status}
                                             key={task.id}
                                             aria-label={`Tarea: ${task.title}`}
                                         >
@@ -1152,12 +1195,9 @@ export default function TasksPage() {
                                                     className={`task-card-status-icon task-card-status-icon-${dueDateStatus}`}
                                                     aria-hidden="true"
                                                 >
-                                                    {dueDateStatus ===
-                                                        'vencida' && '!'}
-                                                    {dueDateStatus ===
-                                                        'por-vencer' && '◷'}
-                                                    {dueDateStatus ===
-                                                        'completada' && '✓'}
+                                                    {dueDateStatus === 'vencida' && '!'}
+                                                    {dueDateStatus === 'por-vencer' && '◷'}
+                                                    {dueDateStatus === 'completada' && '✓'}
                                                 </span>
                                             )}
 
@@ -1195,9 +1235,7 @@ export default function TasksPage() {
                                                 <p
                                                     className={`task-card-status-message task-card-status-message-${dueDateStatus}`}
                                                 >
-                                                    {getTaskStatusMessage(
-                                                        task,
-                                                    )}
+                                                    {getTaskStatusMessage(task)}
                                                 </p>
                                             </div>
 
@@ -1205,14 +1243,10 @@ export default function TasksPage() {
                                                 <button
                                                     type="button"
                                                     className="task-button-secondary"
-                                                    onClick={() =>
-                                                        handleEdit(task)
-                                                    }
+                                                    onClick={() => handleEdit(task)}
                                                     disabled={
                                                         isSubmitting ||
-                                                        pendingStatusIds.has(
-                                                            task.id,
-                                                        )
+                                                        pendingStatusIds.has(task.id)
                                                     }
                                                 >
                                                     Editar
@@ -1231,8 +1265,7 @@ export default function TasksPage() {
                                                         onChange={(event) => {
                                                             handleStatusChange(
                                                                 task.id,
-                                                                event.target
-                                                                    .value as TaskStatus,
+                                                                event.target.value as TaskStatus,
                                                             );
                                                         }}
                                                         disabled={isSubmitting}
@@ -1247,7 +1280,6 @@ export default function TasksPage() {
                                                             Completada
                                                         </option>
                                                     </select>
-
                                                 </div>
 
                                                 <button
@@ -1259,9 +1291,7 @@ export default function TasksPage() {
                                                     }}
                                                     disabled={
                                                         isSubmitting ||
-                                                        pendingStatusIds.has(
-                                                            task.id,
-                                                        )
+                                                        pendingStatusIds.has(task.id)
                                                     }
                                                 >
                                                     Eliminar

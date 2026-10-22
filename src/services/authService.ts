@@ -1,11 +1,14 @@
 import {
     createUserWithEmailAndPassword,
+    EmailAuthProvider,
     getAuth,
+    reauthenticateWithCredential,
     reload,
     sendEmailVerification,
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
     signOut,
+    updatePassword,
     updateProfile,
     type User,
     type UserCredential,
@@ -34,8 +37,9 @@ function getAuthInstance() {
 }
 
 /**
- * Valida la política de contraseñas de MateCode.
- * Devuelve un mensaje si la contraseña no cumple los requisitos.
+ * Política de contraseñas de MateCode.
+ *
+ * Conserva las reglas existentes.
  */
 export function getPasswordValidationError(
     password: string,
@@ -63,7 +67,9 @@ export function getPasswordValidationError(
     return null;
 }
 
-function getErrorCode(error: unknown): string | undefined {
+function getErrorCode(
+    error: unknown,
+): string | undefined {
     if (
         typeof error === 'object' &&
         error !== null &&
@@ -76,7 +82,9 @@ function getErrorCode(error: unknown): string | undefined {
     return undefined;
 }
 
-function getErrorMessage(code: string | undefined): string {
+function getErrorMessage(
+    code: string | undefined,
+): string {
     switch (code) {
         case 'auth/email-already-in-use':
             return 'Ya existe una cuenta con ese correo electrónico.';
@@ -89,6 +97,7 @@ function getErrorMessage(code: string | undefined): string {
 
         case 'auth/invalid-credential':
         case 'auth/wrong-password':
+        case 'auth/invalid-password':
         case 'auth/user-not-found':
             return 'El correo electrónico o la contraseña son incorrectos.';
 
@@ -103,6 +112,9 @@ function getErrorMessage(code: string | undefined): string {
 
         case 'auth/requires-recent-login':
             return 'Por seguridad, vuelve a iniciar sesión antes de realizar esta operación.';
+
+        case 'auth/user-disabled':
+            return 'Esta cuenta se encuentra deshabilitada.';
 
         default:
             return 'No se pudo completar la operación de autenticación. Inténtalo de nuevo.';
@@ -129,18 +141,45 @@ function createServiceError(
 }
 
 /**
- * Crea una cuenta, establece su nombre visible y envía
- * el correo de verificación.
+ * Obtiene el usuario de la sesión actual.
  *
- * Si falla una operación posterior a la creación, el error
- * indica que la cuenta ya existe mediante accountCreated.
+ * Se utiliza para operaciones sobre
+ * la cuenta, no para consultar tareas.
+ */
+function getCurrentAccountUser(): User {
+    const user = getAuthInstance().currentUser;
+
+    if (!user) {
+        throw new AuthServiceError(
+            'Debes iniciar sesión para modificar tu cuenta.',
+            'auth/user-not-authenticated',
+        );
+    }
+
+    if (!user.emailVerified) {
+        throw new AuthServiceError(
+            'Debes verificar tu correo antes de modificar tu cuenta.',
+            'auth/email-not-verified',
+        );
+    }
+
+    return user;
+}
+
+/**
+ * Crea una cuenta, establece el nombre
+ * y envía el correo de verificación.
+ *
+ * Si la configuración posterior falla,
+ * accountCreated indica que la cuenta existe.
  */
 export async function register(
     email: string,
     password: string,
     displayName: string,
 ): Promise<UserCredential> {
-    const passwordError = getPasswordValidationError(password);
+    const passwordError =
+        getPasswordValidationError(password);
 
     if (passwordError) {
         throw new AuthServiceError(
@@ -199,7 +238,7 @@ export async function logout(): Promise<void> {
     }
 }
 
-/** Envía o reenvía el correo de verificación al usuario indicado. */
+/** Envía o reenvía el correo de verificación. */
 export async function sendVerificationEmail(
     user: User,
 ): Promise<void> {
@@ -210,11 +249,10 @@ export async function sendVerificationEmail(
     }
 }
 
-/**
- * Actualiza los datos del usuario desde Firebase.
- * La propiedad emailVerified del objeto queda actualizada.
- */
-export async function reloadCurrentUser(user: User): Promise<User> {
+/** Recarga los datos del usuario actual. */
+export async function reloadCurrentUser(
+    user: User,
+): Promise<User> {
     try {
         await reload(user);
         return user;
@@ -226,20 +264,154 @@ export async function reloadCurrentUser(user: User): Promise<User> {
 /**
  * Solicita la recuperación de contraseña.
  *
- * No revela si el correo está registrado: un error de usuario
- * inexistente se trata como una solicitud completada.
+ * Conserva el comportamiento anterior:
+ * no confirma si un correo está registrado.
  */
-export async function sendPasswordReset(email: string): Promise<void> {
+export async function sendPasswordReset(
+    email: string,
+): Promise<void> {
     try {
         await sendPasswordResetEmail(
             getAuthInstance(),
             email.trim(),
         );
     } catch (error) {
-        if (getErrorCode(error) === 'auth/user-not-found') {
+        if (
+            getErrorCode(error) === 'auth/user-not-found'
+        ) {
             return;
         }
 
+        throw createServiceError(error);
+    }
+}
+
+/**
+ * Etapa 8 - Bloque 4B.
+ *
+ * Actualiza el nombre visible del usuario.
+ *
+ * No cambia su correo, UID ni credenciales.
+ */
+export async function updateAccountDisplayName(
+    displayName: string,
+): Promise<void> {
+    const user = getCurrentAccountUser();
+
+    const normalizedName = displayName
+        .trim()
+        .replace(/\s+/g, ' ');
+
+    if (
+        normalizedName.length < 2 ||
+        normalizedName.length > 80
+    ) {
+        throw new AuthServiceError(
+            'El nombre debe tener entre 2 y 80 caracteres.',
+            'profile/invalid-name',
+        );
+    }
+
+    try {
+        await updateProfile(user, {
+            displayName: normalizedName,
+        });
+    } catch (error) {
+        throw createServiceError(error);
+    }
+}
+
+/**
+ * Etapa 8 - Bloque 4B.
+ *
+ * Cambio seguro de contraseña.
+ *
+ * 1. Comprueba la política local.
+ * 2. Identifica al usuario autenticado.
+ * 3. Reautentica con la contraseña actual.
+ * 4. Actualiza la contraseña en Firebase.
+ *
+ * No registra ni almacena contraseñas
+ * en Firestore o localStorage.
+ */
+export async function changeAccountPassword(
+    currentPassword: string,
+    newPassword: string,
+): Promise<void> {
+    const user = getCurrentAccountUser();
+
+    if (!currentPassword) {
+        throw new AuthServiceError(
+            'Introduce tu contraseña actual.',
+            'profile/current-password-required',
+        );
+    }
+
+    const validationError =
+        getPasswordValidationError(newPassword);
+
+    if (validationError) {
+        throw new AuthServiceError(
+            validationError,
+            'auth/weak-password',
+        );
+    }
+
+    if (currentPassword === newPassword) {
+        throw new AuthServiceError(
+            'La nueva contraseña debe ser diferente de la actual.',
+            'profile/same-password',
+        );
+    }
+
+    if (!user.email) {
+        throw new AuthServiceError(
+            'No se encontró un correo electrónico asociado a la cuenta.',
+            'profile/email-unavailable',
+        );
+    }
+
+    const hasPasswordProvider = user.providerData.some(
+        (provider) => provider.providerId === 'password',
+    );
+
+    if (!hasPasswordProvider) {
+        throw new AuthServiceError(
+            'Esta cuenta no tiene habilitado el acceso mediante correo y contraseña.',
+            'profile/password-provider-unavailable',
+        );
+    }
+
+    try {
+        const credential = EmailAuthProvider.credential(
+            user.email,
+            currentPassword,
+        );
+
+        await reauthenticateWithCredential(
+            user,
+            credential,
+        );
+    } catch (error) {
+        const code = getErrorCode(error);
+
+        if (
+            code === 'auth/invalid-credential' ||
+            code === 'auth/wrong-password' ||
+            code === 'auth/invalid-password'
+        ) {
+            throw new AuthServiceError(
+                'La contraseña actual no es correcta.',
+                code,
+            );
+        }
+
+        throw createServiceError(error);
+    }
+
+    try {
+        await updatePassword(user, newPassword);
+    } catch (error) {
         throw createServiceError(error);
     }
 }

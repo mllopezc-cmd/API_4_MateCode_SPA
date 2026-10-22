@@ -1,7 +1,9 @@
 import { lazy, Suspense } from 'react';
+
 import {
   BrowserRouter,
   Navigate,
+  Outlet,
   Route,
   Routes,
   useLocation,
@@ -9,7 +11,9 @@ import {
 
 import { AuthProvider } from './context/AuthProvider';
 import { useAuth } from './context/AuthContext';
+
 import ProtectedRoute from './components/ProtectedRoute';
+import PrivateLayout from './components/PrivateLayout';
 
 import HomePage from './pages/HomePage';
 import AboutPage from './pages/AboutPage';
@@ -18,20 +22,47 @@ import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import ContactPage from './pages/ContactPage';
 import HelpPage from './pages/HelpPage';
-import ProfilePage from './pages/ProfilePage';
-import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import RecoverPasswordPage from './pages/RecoverPasswordPage';
 
-import './App.css';
+import { ThemeProvider } from './theme/ThemeProvider';
+import ThemeToggle from './components/ThemeToggle';
 
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const TasksPage = lazy(() => import('./pages/TasksPage'));
+import './App.css';
+import './theme/theme.css';
+import './components/PrivateLayout.css';
+
+/*
+ * MateCode SPA
+ * Etapa 8 - Optimizacion previa a Etapa 9.
+ *
+ * Carga diferida de las pantallas privadas
+ * con el objetivo de reducir el JavaScript
+ * necesario durante la carga inicial.
+ *
+ * No cambia rutas, permisos ni contratos.
+ */
+
+const DashboardPage = lazy(
+  () => import('./pages/DashboardPage'),
+);
+
+const TasksPage = lazy(
+  () => import('./pages/TasksPage'),
+);
+
+const ProfilePage = lazy(
+  () => import('./pages/ProfilePage'),
+);
+
+const SettingsPage = lazy(
+  () => import('./pages/SettingsPage'),
+);
 
 function SessionLoading() {
   return (
     <main aria-live="polite" aria-busy="true">
-      <p>Comprobando sesión...</p>
+      <p role="status">Comprobando sesión...</p>
     </main>
   );
 }
@@ -50,6 +81,10 @@ function HomeRoute() {
   return <HomePage />;
 }
 
+/*
+ * Conserva el proceso actual de redireccion
+ * tras el inicio de sesion.
+ */
 function LoginRoute() {
   const { status } = useAuth();
   const location = useLocation();
@@ -139,68 +174,236 @@ function RouteLoadingFallback() {
   );
 }
 
-export function AppRoutes() {
+/*
+ * Identifica las secciones cuyo contenido
+ * se encuentra dentro de PrivateLayout.
+ */
+function isPrivatePath(pathname: string): boolean {
   return (
-    <AuthProvider>
-      <Suspense fallback={<RouteLoadingFallback />}>
-        <Routes>
-          {/* Rutas públicas */}
-          <Route path="/" element={<HomeRoute />} />
-          <Route path="/acerca-de" element={<AboutPage />} />
-          <Route
-            path="/iniciar-sesion"
-            element={<LoginRoute />}
-          />
-          <Route
-            path="/crear-cuenta"
-            element={<RegisterPage />}
-          />
-          <Route
-            path="/verificar-correo"
-            element={<VerifyEmailPage />}
-          />
-          <Route
-            path="/recuperar-contrasena"
-            element={<RecoverPasswordPage />}
-          />
-          <Route path="/contacto" element={<ContactPage />} />
-          <Route path="/ayuda" element={<HelpPage />} />
-
-          {/* Rutas privadas */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/panel" element={<DashboardPage />} />
-            <Route path="/tareas" element={<TasksPage />} />
-            <Route
-              path="/tareas/pendientes"
-              element={<TasksPage />}
-            />
-            <Route
-              path="/tareas/en-progreso"
-              element={<TasksPage />}
-            />
-            <Route
-              path="/tareas/completadas"
-              element={<TasksPage />}
-            />
-            <Route
-              path="/tareas/vencidas"
-              element={<TasksPage />}
-            />
-            <Route path="/perfil" element={<ProfilePage />} />
-            <Route
-              path="/configuracion"
-              element={<SettingsPage />}
-            />
-          </Route>
-
-          {/* Ruta comodín */}
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Suspense>
-    </AuthProvider>
+    pathname === '/panel' ||
+    pathname === '/tareas' ||
+    pathname.startsWith('/tareas/') ||
+    pathname === '/perfil' ||
+    pathname === '/configuracion'
   );
 }
 
+function isInformationPath(pathname: string): boolean {
+  return (
+    pathname === '/ayuda' ||
+    pathname === '/contacto'
+  );
+}
+
+/*
+ * Navegacion adaptable.
+ *
+ * Visitante:
+ * - Ayuda y Contacto son publicos.
+ *
+ * Sesion autenticada:
+ * - Ayuda y Contacto utilizan PrivateLayout.
+ *
+ * El estado de carga evita mostrar
+ * una presentacion incorrecta mientras
+ * se resuelve la sesion.
+ */
+function InformationRoute() {
+  const { status } = useAuth();
+
+  if (status === 'loading') {
+    return <SessionLoading />;
+  }
+
+  if (status === 'authenticated') {
+    return <PrivateLayout />;
+  }
+
+  return <Outlet />;
+}
+
+/*
+ * El selector de tema publico se muestra
+ * solamente fuera de la arquitectura privada.
+ *
+ * Se conserva un unico ThemeProvider.
+ */
+function PublicThemeToolbar() {
+  const { pathname } = useLocation();
+  const { status } = useAuth();
+
+  if (isPrivatePath(pathname)) {
+    return null;
+  }
+
+  if (isInformationPath(pathname)) {
+    if (
+      status === 'authenticated' ||
+      status === 'loading'
+    ) {
+      return null;
+    }
+  }
+
+  return (
+    <div
+      className="matecode-theme-toolbar"
+      role="region"
+      aria-label="Apariencia de MateCode"
+    >
+      <ThemeToggle />
+    </div>
+  );
+}
+
+/*
+ * Contenedor completo de rutas.
+ *
+ * Mantiene:
+ * - Autenticacion existente.
+ * - Sistema de temas.
+ * - Proteccion de rutas privadas.
+ * - Navegacion responsive.
+ * - Redireccion del login.
+ * - Compatibilidad con MemoryRouter.
+ *
+ * Suspense gestiona la carga diferida de:
+ * - DashboardPage.
+ * - TasksPage.
+ * - ProfilePage.
+ * - SettingsPage.
+ */
+export function AppRoutes() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <PublicThemeToolbar />
+
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
+            {/* Inicio y paginas publicas */}
+
+            <Route
+              path="/"
+              element={<HomeRoute />}
+            />
+
+            <Route
+              path="/acerca-de"
+              element={<AboutPage />}
+            />
+
+            <Route
+              path="/iniciar-sesion"
+              element={<LoginRoute />}
+            />
+
+            <Route
+              path="/crear-cuenta"
+              element={<RegisterPage />}
+            />
+
+            <Route
+              path="/verificar-correo"
+              element={<VerifyEmailPage />}
+            />
+
+            <Route
+              path="/recuperar-contrasena"
+              element={<RecoverPasswordPage />}
+            />
+
+            {/*
+              Ayuda y Contacto.
+
+              Se conservan las rutas publicas
+              originales y la presentacion
+              adaptable a la sesion.
+            */}
+
+            <Route element={<InformationRoute />}>
+              <Route
+                path="/ayuda"
+                element={<HelpPage />}
+              />
+
+              <Route
+                path="/contacto"
+                element={<ContactPage />}
+              />
+            </Route>
+
+            {/*
+              Rutas privadas.
+
+              ProtectedRoute mantiene el
+              control de acceso validado
+              en el bloque 4D.
+            */}
+
+            <Route element={<ProtectedRoute />}>
+              <Route element={<PrivateLayout />}>
+                <Route
+                  path="/panel"
+                  element={<DashboardPage />}
+                />
+
+                <Route
+                  path="/tareas"
+                  element={<TasksPage />}
+                />
+
+                <Route
+                  path="/tareas/pendientes"
+                  element={<TasksPage />}
+                />
+
+                <Route
+                  path="/tareas/en-progreso"
+                  element={<TasksPage />}
+                />
+
+                <Route
+                  path="/tareas/completadas"
+                  element={<TasksPage />}
+                />
+
+                <Route
+                  path="/tareas/vencidas"
+                  element={<TasksPage />}
+                />
+
+                <Route
+                  path="/perfil"
+                  element={<ProfilePage />}
+                />
+
+                <Route
+                  path="/configuracion"
+                  element={<SettingsPage />}
+                />
+              </Route>
+            </Route>
+
+            {/* Ruta desconocida */}
+
+            <Route
+              path="*"
+              element={<NotFoundPage />}
+            />
+          </Routes>
+        </Suspense>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+/*
+ * Aplicacion principal.
+ *
+ * BrowserRouter proporciona las rutas.
+ * AppRoutes contiene todos los proveedores.
+ */
 function App() {
   return (
     <BrowserRouter>

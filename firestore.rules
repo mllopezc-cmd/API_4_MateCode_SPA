@@ -2,14 +2,19 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function isVerifiedOwner(uid) {
       return request.auth != null
         && request.auth.uid == uid
         && request.auth.token.email_verified == true;
     }
 
-    // Las fechas se almacenan como Timestamp a medianoche UTC,
-    // o como null cuando no se ha definido una fecha.
+    /*
+     * REGLAS DE TAREAS
+     *
+     * Se conservan las validaciones existentes.
+     */
+
     function validDate(value) {
       return value == null
         || (
@@ -31,8 +36,6 @@ service cloud.firestore {
         );
     }
 
-    // Compara los componentes de la fecha en UTC.
-    // No requiere construir un Timestamp dentro de las reglas.
     function isTodayOrFutureDate(value) {
       return value.year() > request.time.year()
         || (
@@ -139,6 +142,96 @@ service cloud.firestore {
         ]);
 
       allow delete: if isVerifiedOwner(uid);
+    }
+
+    /*
+     * REGLAS DE PERFIL
+     * ETAPA 8 - BLOQUE 4B
+     *
+     * Validación telefónica alineada
+     * con firestoreProfileService.ts.
+     *
+     * Campo opcional.
+     * Entre 7 y 15 dígitos si no está vacío.
+     * Máximo 30 caracteres en total.
+     *
+     * Se admiten:
+     * - Dígitos del 0 al 9.
+     * - Signo +.
+     * - Espacios.
+     * - Paréntesis.
+     * - Puntos.
+     * - Guiones.
+     *
+     * La expresión cuenta dígitos y permite
+     * separadores entre ellos.
+     */
+
+    function validPhone(phone) {
+      return phone is string
+        && phone.size() <= 30
+        && (
+          phone == ''
+          || phone.matches(
+            '^[+() .-]*([0-9][+() .-]*){7,15}$'
+          )
+        );
+    }
+
+    /*
+     * Contrato del documento:
+     *
+     * /users/{uid}/profile/contact
+     *
+     * Solo se permiten tres propiedades.
+     * No se guardan contraseñas ni roles.
+     */
+
+    function validProfileContact(data) {
+      return data.keys().hasAll([
+          'phone',
+          'address',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'phone',
+          'address',
+          'updatedAt'
+        ])
+        && validPhone(data.phone)
+        && data.address is string
+        && data.address.size() <= 240
+        && data.updatedAt is timestamp;
+    }
+
+    /*
+     * Lectura y escritura:
+     * exclusivamente el propietario verificado.
+     *
+     * No se permite enumerar perfiles
+     * ni eliminar documentos de contacto.
+     */
+
+    match /users/{uid}/profile/contact {
+      allow get: if isVerifiedOwner(uid);
+
+      allow list: if false;
+
+      allow create: if isVerifiedOwner(uid)
+        && validProfileContact(request.resource.data)
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if resource != null
+        && isVerifiedOwner(uid)
+        && validProfileContact(request.resource.data)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'phone',
+          'address',
+          'updatedAt'
+        ]);
+
+      allow delete: if false;
     }
   }
 }

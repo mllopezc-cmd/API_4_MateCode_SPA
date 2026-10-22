@@ -1,24 +1,43 @@
+
 import {
     act,
     fireEvent,
     render,
     screen,
     waitFor,
+    within,
 } from '@testing-library/react';
+
 import { describe, expect, it, vi } from 'vitest';
+
 import type { ReactNode } from 'react';
+
 import type {
     User,
     UserCredential,
 } from 'firebase/auth';
+
 import type {
     AuthContextType,
     AuthStatus,
 } from '../src/context/AuthContext';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
+import {
+    MemoryRouter,
+    useLocation,
+    useNavigate,
+} from 'react-router-dom';
+
+/*
+ * Etapa 8 - Bloque 4A.
+ *
+ * Proveedor de autenticación simulado.
+ * Permite verificar rutas sin depender
+ * de una sesión real de Firebase.
+ */
 vi.mock('../src/context/AuthProvider', async () => {
     const React = await import('react');
+
     const { AuthContext } = await import(
         '../src/context/AuthContext'
     );
@@ -31,7 +50,8 @@ vi.mock('../src/context/AuthProvider', async () => {
         const [status, setStatus] =
             React.useState<AuthStatus>('unauthenticated');
 
-        const [user, setUser] = React.useState<User | null>(null);
+        const [user, setUser] =
+            React.useState<User | null>(null);
 
         const login: AuthContextType['login'] = async () => {
             const testUser = {
@@ -60,8 +80,12 @@ vi.mock('../src/context/AuthProvider', async () => {
             isAuthenticated: status === 'authenticated',
             login,
             logout,
-            sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
-            refreshUser: vi.fn().mockResolvedValue(undefined),
+            sendVerificationEmail: vi.fn().mockResolvedValue(
+                undefined,
+            ),
+            refreshUser: vi.fn().mockResolvedValue(
+                undefined,
+            ),
             retryInitialization: () => {
                 setUser(null);
                 setStatus('unauthenticated');
@@ -103,7 +127,9 @@ vi.mock('../src/services/firestoreTaskService', () => ({
         dueDate: null,
     }),
 
-    deleteFirestoreTask: vi.fn().mockResolvedValue(undefined),
+    deleteFirestoreTask: vi.fn().mockResolvedValue(
+        undefined,
+    ),
 }));
 
 import { AppRoutes } from '../src/App';
@@ -190,23 +216,44 @@ describe('Rutas públicas de MateCode', () => {
         renderApp('/');
 
         expect(
-            screen.getByRole('heading', { name: 'MateCode' }),
+            screen.getByRole('heading', {
+                name: 'MateCode',
+            }),
         ).toBeInTheDocument();
     });
 
-    it('permite acceder a Ayuda sin iniciar sesión', () => {
-        renderApp('/ayuda');
+    it(
+        'permite acceder a Ayuda sin iniciar sesión',
+        () => {
+            renderApp('/ayuda');
 
-        expect(
-            screen.getByRole('heading', { name: 'Ayuda de MateCode' }),
-        ).toBeInTheDocument();
-    });
+            expect(
+                screen.getByRole('heading', {
+                    name: 'Ayuda de MateCode',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByRole('link', {
+                    name: 'Iniciar sesión',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.queryByRole('navigation', {
+                    name: 'Navegación lateral',
+                }),
+            ).not.toBeInTheDocument();
+        },
+    );
 
     it('permite acceder a Acerca de', () => {
         renderApp('/acerca-de');
 
         expect(
-            screen.getByRole('heading', { name: 'Acerca de MateCode' }),
+            screen.getByRole('heading', {
+                name: 'Acerca de MateCode',
+            }),
         ).toBeInTheDocument();
     });
 
@@ -214,279 +261,439 @@ describe('Rutas públicas de MateCode', () => {
         renderApp('/contacto');
 
         expect(
-            screen.getByRole('heading', { name: 'Contacto' }),
+            screen.getByRole('heading', {
+                name: 'Contacto',
+            }),
         ).toBeInTheDocument();
+
+        expect(
+            screen.queryByRole('navigation', {
+                name: 'Navegación lateral',
+            }),
+        ).not.toBeInTheDocument();
     });
 
     it('permite acceder a Crear cuenta', () => {
         renderApp('/crear-cuenta');
 
         expect(
-            screen.getByRole('heading', { name: 'Crear cuenta' }),
+            screen.getByRole('heading', {
+                name: 'Crear cuenta',
+            }),
         ).toBeInTheDocument();
     });
 });
 
 describe('Protección de rutas privadas', () => {
-    it('redirige al inicio de sesión al solicitar el panel sin sesión', () => {
-        renderApp('/panel');
-
-        expect(
-            screen.getByRole('heading', { name: 'Iniciar sesión' }),
-        ).toBeInTheDocument();
-    });
-
-    it('redirige a iniciar sesión al solicitar tareas sin sesión', () => {
-        renderApp('/tareas/pendientes');
-
-        expect(
-            screen.getByRole('heading', { name: 'Iniciar sesión' }),
-        ).toBeInTheDocument();
-    });
-
-    it('permite entrar al panel después del inicio de sesión', async () => {
-        renderApp('/iniciar-sesion');
-
-        await loginThroughForm();
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Panel principal',
-            }),
-        ).toBeInTheDocument();
-
-        expect(screen.getByTestId('current-location')).toHaveTextContent(
-            '/panel',
-        );
-    });
-
-    it('redirige al panel si un usuario autenticado abre iniciar sesión', async () => {
-        renderApp('/iniciar-sesion');
-
-        await loginThroughForm();
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Panel principal',
-            }),
-        ).toBeInTheDocument();
-
-        fireEvent.click(
-            screen.getByRole('button', {
-                name: 'Probar acceso manual a iniciar sesión',
-            }),
-        );
-
-        await waitFor(() => {
-            expect(
-                screen.getByTestId('current-location'),
-            ).toHaveTextContent('/panel');
+    it(
+        'redirige al inicio de sesión al solicitar el panel sin sesión',
+        () => {
+            renderApp('/panel');
 
             expect(
-                screen.queryByRole('heading', {
+                screen.getByRole('heading', {
                     name: 'Iniciar sesión',
                 }),
-            ).not.toBeInTheDocument();
-        });
-    });
+            ).toBeInTheDocument();
+        },
+    );
 
-    it('regresa a la ruta privada solicitada después del inicio de sesión', async () => {
-        renderApp('/tareas/pendientes');
+    it(
+        'redirige a iniciar sesión al solicitar tareas sin sesión',
+        () => {
+            renderApp('/tareas/pendientes');
 
-        await loginThroughForm();
-
-        await waitFor(() => {
             expect(
-                screen.getByTestId('current-location'),
-            ).toHaveTextContent('/tareas/pendientes');
-        });
-    });
+                screen.getByRole('heading', {
+                    name: 'Iniciar sesión',
+                }),
+            ).toBeInTheDocument();
+        },
+    );
 
-    it('conserva los parámetros y el fragmento de una ruta privada válida', async () => {
-        renderLoginWithReturnTo({
-            pathname: '/tareas',
-            search: '?estado=pendiente',
-            hash: '#lista',
-        });
+    it(
+        'permite entrar al panel después del inicio de sesión',
+        async () => {
+            renderApp('/iniciar-sesion');
 
-        await loginThroughForm();
+            await loginThroughForm();
 
-        await waitFor(() => {
             expect(
-                screen.getByTestId('current-location'),
-            ).toHaveTextContent('/tareas?estado=pendiente#lista');
-        });
-    });
+                await screen.findByRole('heading', {
+                    name: 'Panel principal',
+                }),
+            ).toBeInTheDocument();
 
-    it('usa el panel como alternativa si el destino es una ruta pública', async () => {
-        renderLoginWithReturnTo({
-            pathname: '/ayuda',
-        });
-
-        await loginThroughForm();
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Panel principal',
-            }),
-        ).toBeInTheDocument();
-
-        expect(screen.getByTestId('current-location')).toHaveTextContent(
-            '/panel',
-        );
-    });
-
-    it('usa el panel como alternativa si el destino es desconocido', async () => {
-        renderLoginWithReturnTo({
-            pathname: '/ruta-inexistente',
-        });
-
-        await loginThroughForm();
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Panel principal',
-            }),
-        ).toBeInTheDocument();
-
-        expect(screen.getByTestId('current-location')).toHaveTextContent(
-            '/panel',
-        );
-    });
-
-    it('usa el panel como alternativa si el destino no tiene una ruta válida', async () => {
-        renderLoginWithReturnTo({
-            pathname: '//sitio-externo.example',
-        });
-
-        await loginThroughForm();
-
-        await waitFor(() => {
             expect(
                 screen.getByTestId('current-location'),
             ).toHaveTextContent('/panel');
-        });
-    });
+        },
+    );
 
-    it('permite acceder a Ayuda desde una sesión autenticada', async () => {
-        renderApp('/iniciar-sesion');
+    it(
+        'redirige al panel si un usuario autenticado abre iniciar sesión',
+        async () => {
+            renderApp('/iniciar-sesion');
 
-        await loginThroughForm();
+            await loginThroughForm();
 
-        await screen.findByRole('heading', {
-            name: 'Panel principal',
-        });
-
-        // El mock de Firestore devuelve una lista vacía y evita
-        // depender de una conexión real para probar la navegación.
-        await waitFor(() => {
             expect(
-                screen.queryByRole('heading', {
-                    name: 'Cargando tus tareas',
+                await screen.findByRole('heading', {
+                    name: 'Panel principal',
+                }),
+            ).toBeInTheDocument();
+
+            fireEvent.click(
+                screen.getByRole('button', {
+                    name: 'Probar acceso manual a iniciar sesión',
+                }),
+            );
+
+            await waitFor(() => {
+                expect(
+                    screen.getByTestId('current-location'),
+                ).toHaveTextContent('/panel');
+
+                expect(
+                    screen.queryByRole('heading', {
+                        name: 'Iniciar sesión',
+                    }),
+                ).not.toBeInTheDocument();
+            });
+        },
+    );
+
+    it(
+        'regresa a la ruta privada solicitada después del inicio de sesión',
+        async () => {
+            renderApp('/tareas/pendientes');
+
+            await loginThroughForm();
+
+            await waitFor(() => {
+                expect(
+                    screen.getByTestId('current-location'),
+                ).toHaveTextContent('/tareas/pendientes');
+            });
+        },
+    );
+
+    it(
+        'conserva los parámetros y el fragmento de una ruta privada válida',
+        async () => {
+            renderLoginWithReturnTo({
+                pathname: '/tareas',
+                search: '?estado=pendiente',
+                hash: '#lista',
+            });
+
+            await loginThroughForm();
+
+            await waitFor(() => {
+                expect(
+                    screen.getByTestId('current-location'),
+                ).toHaveTextContent(
+                    '/tareas?estado=pendiente#lista',
+                );
+            });
+        },
+    );
+
+    it(
+        'usa el panel como alternativa si el destino es una ruta pública',
+        async () => {
+            renderLoginWithReturnTo({
+                pathname: '/ayuda',
+            });
+
+            await loginThroughForm();
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Panel principal',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/panel');
+        },
+    );
+
+    it(
+        'usa el panel como alternativa si el destino es desconocido',
+        async () => {
+            renderLoginWithReturnTo({
+                pathname: '/ruta-inexistente',
+            });
+
+            await loginThroughForm();
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Panel principal',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/panel');
+        },
+    );
+
+    it(
+        'usa el panel como alternativa si el destino no tiene una ruta válida',
+        async () => {
+            renderLoginWithReturnTo({
+                pathname: '//sitio-externo.example',
+            });
+
+            await loginThroughForm();
+
+            await waitFor(() => {
+                expect(
+                    screen.getByTestId('current-location'),
+                ).toHaveTextContent('/panel');
+            });
+        },
+    );
+
+    it(
+        'permite acceder a Ayuda desde una sesión autenticada',
+        async () => {
+            renderApp('/iniciar-sesion');
+
+            await loginThroughForm();
+
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            });
+
+            await waitFor(() => {
+                expect(
+                    screen.queryByRole('heading', {
+                        name: 'Cargando tus tareas',
+                    }),
+                ).not.toBeInTheDocument();
+
+                expect(
+                    screen.queryByRole('heading', {
+                        name: 'No se pudieron cargar las tareas',
+                    }),
+                ).not.toBeInTheDocument();
+            });
+
+            /*
+             * Se selecciona el enlace del menú
+             * lateral y no el acceso rápido
+             * que también existe en el dashboard.
+             */
+            const accountNav = screen.getByRole(
+                'navigation',
+                { name: 'Opciones de cuenta' },
+            );
+
+            fireEvent.click(
+                within(accountNav).getByRole('link', {
+                    name: 'Ayuda',
+                }),
+            );
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Ayuda de MateCode',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/ayuda');
+
+            /*
+             * La arquitectura privada permanece.
+             */
+            expect(
+                screen.getByRole('navigation', {
+                    name: 'Navegación lateral',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByRole('navigation', {
+                    name: 'Navegación inferior',
+                }),
+            ).toBeInTheDocument();
+
+            /*
+             * No deben mostrarse instrucciones
+             * de registro a una cuenta activa.
+             */
+            expect(
+                screen.queryByRole('link', {
+                    name: 'Crear cuenta',
                 }),
             ).not.toBeInTheDocument();
+        },
+    );
+
+    it(
+        'mantiene la navegación privada al entrar en Contacto',
+        async () => {
+            renderApp('/iniciar-sesion');
+
+            await loginThroughForm();
+
+            await screen.findByRole('heading', {
+                name: 'Panel principal',
+            });
+
+            const accountNav = screen.getByRole(
+                'navigation',
+                { name: 'Opciones de cuenta' },
+            );
+
+            fireEvent.click(
+                within(accountNav).getByRole('link', {
+                    name: 'Contacto',
+                }),
+            );
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Contacto',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByTestId('current-location'),
+            ).toHaveTextContent('/contacto');
+
+            expect(
+                screen.getByRole('navigation', {
+                    name: 'Navegación lateral',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByRole('navigation', {
+                    name: 'Navegación inferior',
+                }),
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByRole('button', {
+                    name: 'Cerrar sesión',
+                }),
+            ).toBeInTheDocument();
+        },
+    );
+
+    it(
+        'cierra la sesión y redirige al inicio de sesión',
+        async () => {
+            renderApp('/iniciar-sesion');
+
+            await loginThroughForm();
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Panel principal',
+                }),
+            ).toBeInTheDocument();
+
+            fireEvent.click(
+                screen.getByRole('button', {
+                    name: 'Cerrar sesión',
+                }),
+            );
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Iniciar sesión',
+                }),
+            ).toBeInTheDocument();
+        },
+    );
+
+    it(
+        'muestra una página no encontrada para una ruta desconocida',
+        () => {
+            renderApp('/ruta-inexistente');
+
+            expect(
+                screen.getByRole('heading', {
+                    name: 'Página no encontrada',
+                }),
+            ).toBeInTheDocument();
+        },
+    );
+
+    it(
+        'usa el panel como alternativa si search tiene un formato inválido',
+        async () => {
+            renderLoginWithReturnTo({
+                pathname: '/tareas',
+                search: 'estado=pendiente',
+            });
+
+            await loginThroughForm();
+
+            await waitFor(() => {
+                expect(
+                    screen.getByTestId('current-location'),
+                ).toHaveTextContent('/panel');
+            });
+        },
+    );
+
+    it(
+        'usa el panel como alternativa si hash tiene un formato inválido',
+        async () => {
+            renderLoginWithReturnTo({
+                pathname: '/tareas',
+                hash: 'lista',
+            });
+
+            await loginThroughForm();
+
+            await waitFor(() => {
+                expect(
+                    screen.getByTestId('current-location'),
+                ).toHaveTextContent('/panel');
+            });
+        },
+    );
+
+    it(
+        'impide volver al panel protegido después de cerrar sesión',
+        async () => {
+            renderApp('/iniciar-sesion');
+
+            await loginThroughForm();
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Panel principal',
+                }),
+            ).toBeInTheDocument();
+
+            fireEvent.click(
+                screen.getByRole('button', {
+                    name: 'Cerrar sesión',
+                }),
+            );
+
+            expect(
+                await screen.findByRole('heading', {
+                    name: 'Iniciar sesión',
+                }),
+            ).toBeInTheDocument();
 
             expect(
                 screen.queryByRole('heading', {
-                    name: 'No se pudieron cargar las tareas',
+                    name: 'Panel principal',
                 }),
             ).not.toBeInTheDocument();
-        });
-
-        fireEvent.click(screen.getByRole('link', { name: 'Ayuda' }));
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Ayuda de MateCode',
-            }),
-        ).toBeInTheDocument();
-    });
-
-    it('cierra la sesión y redirige al inicio de sesión', async () => {
-        renderApp('/iniciar-sesion');
-
-        await loginThroughForm();
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Panel principal',
-            }),
-        ).toBeInTheDocument();
-
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Cerrar sesión' }),
-        );
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Iniciar sesión',
-            }),
-        ).toBeInTheDocument();
-    });
-
-    it('muestra una página no encontrada para una ruta desconocida', () => {
-        renderApp('/ruta-inexistente');
-
-        expect(
-            screen.getByRole('heading', { name: 'Página no encontrada' }),
-        ).toBeInTheDocument();
-    });
-
-    it('usa el panel como alternativa si search tiene un formato inválido', async () => {
-        renderLoginWithReturnTo({
-            pathname: '/tareas',
-            search: 'estado=pendiente',
-        });
-
-        await loginThroughForm();
-
-        await waitFor(() => {
-            expect(
-                screen.getByTestId('current-location'),
-            ).toHaveTextContent('/panel');
-        });
-    });
-
-    it('usa el panel como alternativa si hash tiene un formato inválido', async () => {
-        renderLoginWithReturnTo({
-            pathname: '/tareas',
-            hash: 'lista',
-        });
-
-        await loginThroughForm();
-
-        await waitFor(() => {
-            expect(
-                screen.getByTestId('current-location'),
-            ).toHaveTextContent('/panel');
-        });
-    });
-
-    it('impide volver al panel protegido después de cerrar sesión', async () => {
-        renderApp('/iniciar-sesion');
-
-        await loginThroughForm();
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Panel principal',
-            }),
-        ).toBeInTheDocument();
-
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Cerrar sesión' }),
-        );
-
-        expect(
-            await screen.findByRole('heading', {
-                name: 'Iniciar sesión',
-            }),
-        ).toBeInTheDocument();
-
-        expect(
-            screen.queryByRole('heading', {
-                name: 'Panel principal',
-            }),
-        ).not.toBeInTheDocument();
-    });
+        },
+    );
 });
