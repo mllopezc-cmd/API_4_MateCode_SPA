@@ -134,6 +134,22 @@ npm run preview
 
 La compilación genera los recursos del frontend en `dist/`.
 
+## Evidencia de validación automatizada
+
+**Última ejecución local registrada: 22 de octubre de 2026.** El proyecto dispone de resultados satisfactorios en dos grupos de pruebas independientes:
+
+| Grupo de validación | Ejecución | Pruebas aprobadas | Organización |
+| --- | --- | ---: | --- |
+| Aplicación, componentes, servicios y utilidades | `npm test` | **334 de 334** | 28 archivos de pruebas aprobados |
+| Reglas de seguridad de Cloud Firestore | `firebase emulators:exec --only firestore "npm run test:rules"` | **52 de 52** | 3 conjuntos de pruebas aprobados |
+| **Total de pruebas automatizadas registradas** | **Ambas ejecuciones** | **386 de 386 (100 %)** | Sin pruebas fallidas en esas ejecuciones |
+
+Se registró, además, la ejecución satisfactoria de `npm run lint` (análisis estático sin errores) y `npm run build` (compilación de producción completada). Estas comprobaciones son **adicionales** y no se suman al número de casos de prueba.
+
+Los **386 casos aprobados** corresponden a las ejecuciones registradas en esa fecha. El porcentaje indica la proporción de pruebas que aprobaron en dichas ejecuciones; **no equivale a cobertura del 100 % del código**, ni garantiza la ausencia de defectos. Los cambios posteriores deben validarse nuevamente y registrar sus propios resultados.
+
+Para reproducir las verificaciones se incluyen los comandos en el apartado siguiente y los criterios técnicos en la [guía de arquitectura](docs/ARQUITECTURA.md#8-pruebas-y-criterios-de-mantenimiento).
+
 ## Pruebas y revisión de cambios
 
 ```bash

@@ -155,6 +155,14 @@ En el formulario de tareas, la fecha de inicio no debe quedar en el pasado y la 
 
 ## 8. Pruebas y criterios de mantenimiento
 
+### Resultados documentados
+
+En la última validación local registrada, realizada el **22 de octubre de 2026**, se obtuvieron **334/334 pruebas de aplicación aprobadas en 28 archivos** y **52/52 pruebas de reglas de Firestore aprobadas en 3 conjuntos**. El total asciende a **386/386 pruebas automatizadas aprobadas**. Además, `npm run lint` y `npm run build` concluyeron satisfactoriamente.
+
+Estos resultados pertenecen a ejecuciones locales registradas y se consignan como referencia del proceso de revisión. No acreditan una cobertura total del código, no sustituyen las pruebas de regresión posteriores y no deben confundirse con un estado automatizado de GitHub Actions. Consulta el [resumen de validaciones del README](../README.md#evidencia-de-validacion-automatizada).
+
+### Comandos de comprobación
+
 Ejecutar según el alcance del cambio:
 
 ```bash
