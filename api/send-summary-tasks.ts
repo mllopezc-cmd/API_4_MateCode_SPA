@@ -77,7 +77,9 @@ export default {
 
         const auth = getAuth(app);
 
+
         let user;
+        let authStep = 'verifyIdToken';
 
         try {
             const decodedToken = await auth.verifyIdToken(
@@ -85,14 +87,28 @@ export default {
                 true,
             );
 
+            authStep = 'getUser';
             user = await auth.getUser(decodedToken.uid);
-        } catch {
+        } catch (error) {
+            const errorCode =
+                error &&
+                    typeof error === 'object' &&
+                    'code' in error
+                    ? String(error.code)
+                    : 'unknown';
+
+            console.error('[MateCode Summary Auth]', {
+                step: authStep,
+                code: errorCode,
+            });
+
             return jsonResponse(401, {
                 ok: false,
                 message:
                     'Tu sesión no es válida. Inicia sesión nuevamente.',
             });
         }
+
 
         if (
             user.disabled ||
