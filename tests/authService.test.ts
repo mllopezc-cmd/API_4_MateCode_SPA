@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => {
         sendVerificationMock: vi.fn(),
         reloadMock: vi.fn(),
         sendPasswordResetMock: vi.fn(),
+        passwordCredentialMock: vi.fn(),
+        reauthenticateMock: vi.fn(),
+        updatePasswordMock: vi.fn(),
     };
 });
 
@@ -26,6 +29,11 @@ vi.mock('firebase/auth', () => ({
     sendEmailVerification: mocks.sendVerificationMock,
     reload: mocks.reloadMock,
     sendPasswordResetEmail: mocks.sendPasswordResetMock,
+    EmailAuthProvider: {
+        credential: mocks.passwordCredentialMock,
+    },
+    reauthenticateWithCredential: mocks.reauthenticateMock,
+    updatePassword: mocks.updatePasswordMock,
 }));
 
 vi.mock('../src/lib/firebase', () => ({
@@ -36,7 +44,9 @@ import type { User, UserCredential } from 'firebase/auth';
 
 import {
     AuthServiceError,
+    changeAccountPassword,
     getPasswordValidationError,
+    updateAccountDisplayName,
     login,
     logout,
     register,
@@ -59,6 +69,12 @@ const testCredential = {
 describe('authService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Object.assign(mocks.auth, {
+            currentUser: null,
+        });
+
+        mocks.reauthenticateMock.mockResolvedValue(undefined);
+        mocks.updatePasswordMock.mockResolvedValue(undefined);
 
         mocks.getAuthMock.mockReturnValue(mocks.auth);
         mocks.createUserMock.mockResolvedValue(testCredential);
@@ -228,4 +244,168 @@ describe('authService', () => {
             getPasswordValidationError('ÁrbolSeguro9!'),
         ).toBeNull();
     });
+
+    it('impide cambiar la contraseña cuando falla la reautenticación', async () => {
+        const verifiedUser = {
+            ...testUser,
+            emailVerified: true,
+            providerData: [
+                { providerId: 'password' },
+            ],
+        } as User;
+
+        Object.assign(mocks.auth, {
+            currentUser: verifiedUser,
+        });
+
+        const credential = {
+            providerId: 'password',
+        };
+
+        mocks.passwordCredentialMock.mockReturnValue(
+            credential,
+        );
+
+        mocks.reauthenticateMock.mockRejectedValue({
+            code: 'auth/invalid-credential',
+        });
+
+        await expect(
+            changeAccountPassword(
+                'Incorrecta123!',
+                'NuevaClave123!',
+            ),
+        ).rejects.toMatchObject({
+            code: 'auth/invalid-credential',
+            message: 'La contraseña actual no es correcta.',
+        });
+
+        expect(
+            mocks.passwordCredentialMock,
+        ).toHaveBeenCalledWith(
+            'test@example.com',
+            'Incorrecta123!',
+        );
+
+        expect(
+            mocks.reauthenticateMock,
+        ).toHaveBeenCalledWith(
+            verifiedUser,
+            credential,
+        );
+
+        expect(
+            mocks.updatePasswordMock,
+        ).not.toHaveBeenCalled();
+    });
+
+    it('cambia la contraseña después de reautenticar correctamente', async () => {
+        const verifiedUser = {
+            ...testUser,
+            emailVerified: true,
+            providerData: [
+                { providerId: 'password' },
+            ],
+        } as User;
+
+        Object.assign(mocks.auth, {
+            currentUser: verifiedUser,
+        });
+
+        const credential = {
+            providerId: 'password',
+        };
+
+        mocks.passwordCredentialMock.mockReturnValue(
+            credential,
+        );
+
+        await expect(
+            changeAccountPassword(
+                'Actual123!',
+                'NuevaClave123!',
+            ),
+        ).resolves.toBeUndefined();
+
+        expect(
+            mocks.passwordCredentialMock,
+        ).toHaveBeenCalledWith(
+            'test@example.com',
+            'Actual123!',
+        );
+
+        expect(
+            mocks.reauthenticateMock,
+        ).toHaveBeenCalledWith(
+            verifiedUser,
+            credential,
+        );
+
+        expect(
+            mocks.updatePasswordMock,
+        ).toHaveBeenCalledWith(
+            verifiedUser,
+            'NuevaClave123!',
+        );
+
+        expect(
+            mocks.reauthenticateMock.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+            mocks.updatePasswordMock.mock.invocationCallOrder[0],
+        );
+    });
+
+    it('actualiza y normaliza el nombre de un usuario verificado', async () => {
+        const verifiedUser = {
+            ...testUser,
+            emailVerified: true,
+        } as User;
+
+        Object.assign(mocks.auth, {
+            currentUser: verifiedUser,
+        });
+
+        await expect(
+            updateAccountDisplayName(
+                '   María    López   ',
+            ),
+        ).resolves.toBeUndefined();
+
+        expect(
+            mocks.updateProfileMock,
+        ).toHaveBeenCalledWith(
+            verifiedUser,
+            {
+                displayName: 'María López',
+            },
+        );
+    });
+
+    it.each([
+        ['demasiado corto', 'A'],
+        ['demasiado largo', 'A'.repeat(81)],
+    ])(
+        'rechaza un nombre %s sin actualizar Firebase',
+        async (_caseName, invalidName) => {
+            const verifiedUser = {
+                ...testUser,
+                emailVerified: true,
+            } as User;
+
+            Object.assign(mocks.auth, {
+                currentUser: verifiedUser,
+            });
+
+            await expect(
+                updateAccountDisplayName(invalidName),
+            ).rejects.toMatchObject({
+                name: 'AuthServiceError',
+                code: 'profile/invalid-name',
+            });
+
+            expect(
+                mocks.updateProfileMock,
+            ).not.toHaveBeenCalled();
+        },
+    );
 });
