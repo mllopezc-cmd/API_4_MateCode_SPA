@@ -1,41 +1,104 @@
 # MateCode SPA
 
-MateCode es una aplicación web para organizar tareas y facilitar el trabajo de programación. Está desarrollada con React y TypeScript, utiliza React Router para la navegación, Firebase Authentication para la autenticación de usuarios y Cloud Firestore para la persistencia de tareas.
+**Accesos rápidos:** [Abrir MateCode en Vercel](https://api-4-mate-code-spa.vercel.app/) · [Ver repositorio en GitHub](https://github.com/mllopezc-cmd/API_4_MateCode_SPA)
 
-## Estado actual
+**Documentación:** [Arquitectura del proyecto](docs/ARQUITECTURA.md) · [Guía de trabajo con IA](docs/GUIA_TRABAJO_CON_IA.md)
 
-El proyecto incluye:
+## ¿Qué es MateCode SPA?
 
-- Interfaz web desarrollada con React, TypeScript y Vite.
-- Rutas públicas y protegidas.
-- Autenticación con Firebase y verificación del correo electrónico.
-- Persistencia de tareas en Cloud Firestore.
-- Reglas de seguridad para proteger los datos de cada usuario.
-- Pruebas automatizadas de componentes, servicios y reglas de Firestore.
-- Carga diferida de determinadas páginas para reducir el tamaño del paquete inicial.
+**MateCode SPA** es una aplicación web de productividad orientada a organizar tareas y dar seguimiento a actividades personales, académicas o relacionadas con proyectos de programación. Permite registrar tareas, establecer fechas, actualizar su estado y consultar el avance desde un espacio de trabajo asociado a cada cuenta.
 
-## Tecnologías
+Su interfaz se desarrolla con **React, TypeScript y Vite**. La navegación utiliza **React Router**; **Firebase Authentication** gestiona el acceso y **Cloud Firestore** conserva las tareas. La aplicación está publicada en **Vercel**. SPA (*Single Page Application*) significa que la navegación se realiza principalmente dentro de una misma aplicación web, sin recargar toda la página en cada cambio de sección.
 
-- React y React DOM
-- TypeScript
-- Vite
-- React Router
-- Firebase Authentication
-- Cloud Firestore
-- Vitest
-- React Testing Library
-- ESLint
+MateCode es un **gestor de tareas**: la descripción del proyecto no implica que incluya un compilador, un editor de código o la ejecución de programas.
 
-## Requisitos previos
+## Cómo utilizar la aplicación
+
+1. Ingresa a [MateCode SPA](https://api-4-mate-code-spa.vercel.app/).
+2. Selecciona **Crear cuenta** si eres un usuario nuevo, o **Iniciar sesión** si ya tienes una cuenta.
+3. Completa la verificación de la dirección de correo asociada a tu cuenta cuando el flujo de registro lo solicite.
+4. Accede al **Panel principal**, donde se muestra el estado general de tus tareas y las próximas actividades.
+5. En **Mis tareas**, crea una actividad con un título; de forma opcional, añade descripción, fecha de inicio y fecha límite.
+6. Consulta las tareas por estado, actualiza su información y marca su progreso conforme avances.
+7. Utiliza los filtros y los indicadores de vencimiento para identificar las actividades que requieren atención.
+8. Cierra sesión al terminar, especialmente si utilizas un equipo compartido.
+
+## Funciones y capacidades disponibles
+
+| Módulo | Funcionalidad |
+| --- | --- |
+| Acceso de usuarios | Registro, inicio de sesión, verificación de cuenta, recuperación de contraseña y cierre de sesión mediante Firebase Authentication. |
+| Panel principal | Indicadores de tareas totales, pendientes, en progreso y completadas; listado de próximas actividades y accesos a la gestión de tareas. |
+| Gestión de tareas | Creación, consulta, edición y eliminación de tareas del usuario autenticado. |
+| Planificación | Título, descripción opcional, fecha de inicio planificada y fecha límite opcionales. |
+| Seguimiento | Estados **Pendiente**, **En progreso** y **Completada**. |
+| Organización | Vistas de **Todas**, **Pendientes**, **En progreso**, **Completadas** y **Vencidas**. |
+| Priorización | Prioridad informativa calculada a partir de la cercanía de la fecha límite. |
+| Persistencia | Almacenamiento de tareas en Cloud Firestore, vinculado a la cuenta autenticada. |
+| Navegación e información | Páginas de inicio, acerca del proyecto, ayuda y contacto. |
+
+### Prioridad y vencimientos
+
+La prioridad se calcula automáticamente para tareas no completadas que tienen una fecha límite futura o igual al día actual:
+
+- **Alta:** faltan de 0 a 5 días.
+- **Media:** faltan de 6 a 10 días.
+- **Baja:** faltan 11 días o más.
+
+Las tareas vencidas, completadas o sin fecha límite no reciben una prioridad automática dentro de esta clasificación. Una tarea puede aparecer como **vencida** aunque su estado de trabajo sea *Pendiente* o *En progreso*: el vencimiento es una condición de calendario y no un cuarto estado editable.
+
+### Alcance actual
+
+Las secciones **Mi perfil** y **Configuración** forman parte de la navegación, pero sus pantallas actuales anuncian capacidades previstas; todavía no ofrecen edición de datos personales ni personalización completa de preferencias. No deben considerarse módulos terminados.
+
+El proyecto no debe presentarse como una plataforma de colaboración multiusuario sobre tareas compartidas: las tareas se administran de forma individual por cuenta.
+
+## Tecnologías utilizadas
+
+- **Frontend:** React, React DOM, TypeScript, Vite y React Router.
+- **Identidad:** Firebase Authentication.
+- **Base de datos:** Cloud Firestore.
+- **Despliegue:** Vercel.
+- **Pruebas:** Vitest, React Testing Library y herramientas de prueba de reglas de Firebase.
+- **Análisis estático:** ESLint y compilación de TypeScript.
+
+## Organización del repositorio
+
+```text
+API_4_MateCode_SPA/
+├── api/                    Funciones de servidor desplegadas en Vercel
+├── public/                 Recursos públicos
+├── src/
+│   ├── components/         Componentes reutilizables y protección de rutas
+│   ├── context/            Estado y contexto de autenticación
+│   ├── lib/                Configuración e inicialización de Firebase
+│   ├── pages/              Vistas y rutas de la aplicación
+│   ├── services/           Servicios de autenticación y tareas
+│   ├── types/              Tipos compartidos de TypeScript
+│   └── utils/              Utilidades de fechas y planificación
+├── tests/                  Pruebas de componentes, servicios y utilidades
+├── rules-tests/            Pruebas de reglas de Firestore
+├── docs/
+│   ├── ARQUITECTURA.md     Estructura y flujos técnicos
+│   └── GUIA_TRABAJO_CON_IA.md  Reglas de colaboración y mantenimiento
+├── firestore.rules         Reglas de acceso a los datos
+├── firebase.json           Configuración de Firebase CLI
+├── .env.example            Plantilla de variables de cliente
+└── README.md               Documento principal del proyecto
+```
+
+Para conocer las responsabilidades específicas de cada carpeta, consulta la [arquitectura técnica](docs/ARQUITECTURA.md).
+
+## Instalación y ejecución local
+
+### Requisitos
 
 - Node.js `^20.19.0` o `>=22.12.0`.
 - npm.
 - Un proyecto de Firebase con Authentication y Cloud Firestore configurados.
-- Firebase CLI para ejecutar las pruebas de las reglas mediante el emulador.
+- Firebase CLI para ejecutar las pruebas con el emulador de Firestore.
 
-## Instalación
-
-Clona el repositorio e ingresa en su directorio:
+### Preparar el entorno
 
 ```bash
 git clone https://github.com/mllopezc-cmd/API_4_MateCode_SPA.git
@@ -43,101 +106,69 @@ cd API_4_MateCode_SPA
 npm install
 ```
 
-Crea el archivo `.env.local` en la raíz del proyecto, tomando `.env.example` como referencia. Configura las variables de Firebase correspondientes a tu entorno.
+Crea `.env.local` en la raíz, usando `.env.example` como modelo. Configura los valores del proyecto Firebase correspondiente al entorno de trabajo.
 
-No subas `.env.local` ni otros archivos que contengan credenciales privadas al repositorio.
+| Variable | Función |
+| --- | --- |
+| `VITE_FIREBASE_API_KEY` | Clave pública de configuración del cliente Firebase. |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Dominio de autenticación de Firebase. |
+| `VITE_FIREBASE_PROJECT_ID` | Identificador del proyecto Firebase. |
+| `VITE_FIREBASE_APP_ID` | Identificador de la aplicación web en Firebase. |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Variable opcional para la configuración de Storage. |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Variable opcional de configuración de Firebase Messaging. |
 
-## Variables de entorno
+Las variables `VITE_*` forman parte de la compilación del cliente y **no deben contener secretos privados**. Nunca publiques archivos `.env.local` ni credenciales de servidor.
 
-| Variable | Uso |
-|---|---|
-| `VITE_FIREBASE_API_KEY` | Clave de configuración del cliente Firebase |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Dominio de autenticación |
-| `VITE_FIREBASE_PROJECT_ID` | Identificador del proyecto Firebase |
-| `VITE_FIREBASE_APP_ID` | Identificador de la aplicación Firebase |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Bucket de Firebase Storage, si se utiliza |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Identificador del remitente de mensajería, si se utiliza |
-
-Utiliza los valores correspondientes al proyecto de Firebase autorizado para tu entorno.
-
-Las variables con el prefijo `VITE_` quedan disponibles en el código del cliente. No deben contener credenciales privadas ni secretos de servidor. La configuración del cliente no sustituye las reglas de seguridad de Firebase.
-
-## Desarrollo local
-
-Inicia el servidor de desarrollo:
+### Ejecutar la aplicación
 
 ```bash
 npm run dev
 ```
 
-Vite mostrará en la terminal la dirección local desde la que puedes abrir la aplicación.
-
-## Pruebas y validaciones
-
-Ejecuta las pruebas automatizadas:
-
-```bash
-npm test
-```
-
-Ejecuta ESLint para comprobar la calidad estática del código:
-
-```bash
-npm run lint
-```
-
-Comprueba los tipos de TypeScript y genera la compilación de producción:
+Abre la dirección local que muestre Vite. Para generar y previsualizar una compilación de producción:
 
 ```bash
 npm run build
+npm run preview
 ```
 
-Los archivos de producción se generan en el directorio `dist/`.
+La compilación genera los recursos del frontend en `dist/`.
 
-### Pruebas de las reglas de Firestore
+## Pruebas y revisión de cambios
 
-Las pruebas de seguridad requieren Firebase CLI y el emulador de Firestore. Ejecútalas con:
+```bash
+npm test
+npm run lint
+npm run build
+```
+
+Para comprobar las reglas de acceso de Firestore con Firebase CLI y el emulador:
 
 ```bash
 firebase emulators:exec --only firestore "npm run test:rules"
 ```
 
-Antes de entregar cambios, ejecuta las validaciones pertinentes y revisa `git diff` y `git status`. No consideres un cambio terminado hasta comprobar que no introduce regresiones.
+Antes de publicar cambios, comprueba también:
 
-## Estructura del proyecto
-
-```text
-src/
-├── components/   Componentes reutilizables
-├── context/      Contexto y estado de autenticación
-├── lib/          Configuración e inicialización de Firebase
-├── pages/        Páginas de la aplicación
-├── services/     Operaciones de autenticación y tareas
-├── types/        Tipos compartidos de TypeScript
-└── utils/        Funciones auxiliares
-
-tests/             Pruebas automatizadas de la aplicación
-rules-tests/       Pruebas de reglas de Firestore
-docs/              Documentación técnica y guía de colaboración
+```bash
+git diff --check
+git status --short
+git diff
 ```
 
-La estructura anterior es orientativa. Consulta la [guía de arquitectura](docs/ARQUITECTURA.md) para conocer las responsabilidades de los módulos, sus límites y los principales flujos de la aplicación.
+Estos comandos describen el proceso de validación; no implican que todas las pruebas se hayan ejecutado para esta actualización documental.
 
-## Enlaces del proyecto
+## Seguridad y tratamiento de datos
 
-- Repositorio: [API_4_MateCode_SPA en GitHub](https://github.com/mllopezc-cmd/API_4_MateCode_SPA)
-- Despliegue en Vercel: pendiente de confirmar la URL pública.
+- La aplicación restringe sus páginas privadas según el estado de autenticación y la verificación de la cuenta.
+- Las tareas se organizan en Firestore bajo la ruta `users/{uid}/tasks/{taskId}`; cada usuario debe acceder únicamente a sus propios registros.
+- Las reglas de Firestore son una barrera independiente de las comprobaciones de la interfaz.
+- Los errores de permisos, carga o conectividad deben comunicarse de forma explícita; no deben confundirse con una lista vacía de tareas.
+- Las credenciales y los archivos de configuración privada deben permanecer fuera del control de versiones.
 
-## Seguridad y colaboración
+## Documentación y navegación
 
-- No publiques archivos `.env.local`, tokens ni credenciales privadas.
-- No debilites las reglas de Firestore para hacer pasar una prueba.
-- No confíes en la interfaz como única barrera de acceso: los datos deben estar protegidos también por las reglas de seguridad de Firestore.
-- No elimines ni desactives pruebas para ocultar regresiones.
-- No cambies contratos, servicios o flujos existentes sin revisar sus dependencias y pruebas.
-- Revisa los cambios antes de confirmarlos en Git.
+- [Arquitectura de MateCode SPA](docs/ARQUITECTURA.md): módulos, rutas, flujo de autenticación, persistencia, fechas y seguridad.
+- [Guía de trabajo con IA](docs/GUIA_TRABAJO_CON_IA.md): instrucciones para modificar el proyecto de forma controlada y verificable.
 
-## Documentación adicional
-
-- [Arquitectura del proyecto](docs/ARQUITECTURA.md)
-- [Guía de trabajo con IA](docs/GUIA_TRABAJO_CON_IA.md)
+**Acceso directo:** [Aplicación en Vercel](https://api-4-mate-code-spa.vercel.app/) · [Repositorio en GitHub](https://github.com/mllopezc-cmd/API_4_MateCode_SPA)

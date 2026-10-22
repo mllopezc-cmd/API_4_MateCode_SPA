@@ -1,109 +1,161 @@
 # Arquitectura de MateCode SPA
 
-## 1. Objetivo
+**Navegación:** [← Regresar al README principal](../README.md) · [Guía de trabajo con IA](GUIA_TRABAJO_CON_IA.md)
 
-Este documento describe la estructura actual de MateCode, las responsabilidades de sus módulos y las reglas que deben respetarse al extender la aplicación.
+**Accesos rápidos:** [Aplicación en Vercel](https://api-4-mate-code-spa.vercel.app/) · [Repositorio en GitHub](https://github.com/mllopezc-cmd/API_4_MateCode_SPA)
 
-La prioridad es mantener una arquitectura comprensible, preservar los contratos existentes y evitar refactorizaciones que no aporten un beneficio concreto.
+## 1. Propósito y alcance
 
-## 2. Estructura de carpetas
+Este documento describe la organización del código, los límites entre módulos y los flujos principales de MateCode SPA. Su propósito es facilitar el mantenimiento sin alterar contratos existentes ni introducir dependencias innecesarias.
+
+La aplicación sigue una estructura **React + TypeScript + Vite** y navega con **React Router**. Utiliza **Firebase Authentication** para las sesiones y **Cloud Firestore** como persistencia de las tareas. Vercel aloja el despliegue web. La interfaz y las reglas de Firestore asumen responsabilidades complementarias: una ruta protegida no sustituye la autorización de la base de datos.
+
+## 2. Vista general de componentes
+
+```text
+Navegador
+  └── React + React Router
+      ├── Páginas públicas: inicio, acceso, registro, ayuda y contacto
+      ├── AuthProvider / AuthContext / ProtectedRoute
+      │   └── Firebase Authentication
+      └── Páginas privadas: panel, tareas, perfil y configuración
+          └── firestoreTaskService
+              ├── firestoreTaskMapper
+              └── firestore (SDK cliente)
+                  └── Cloud Firestore + firestore.rules
+```
+
+Los componentes coordinan las acciones visibles; los servicios encapsulan las operaciones de Firebase y el mapper conserva la conversión y validación de datos.
+
+## 3. Responsabilidades por carpeta
 
 ### `src/pages/`
 
-Contiene las páginas asociadas a las rutas de la aplicación, como inicio, acceso, registro, recuperación de contraseña, verificación del correo, dashboard y tareas.
+Implementa las páginas de la aplicación. Entre sus rutas están `/`, `/acerca-de`, `/iniciar-sesion`, `/crear-cuenta`, `/verificar-correo`, `/recuperar-contrasena`, `/ayuda`, `/contacto`, `/panel`, `/tareas`, `/perfil` y `/configuracion`.
 
-Las páginas coordinan la interfaz, el estado local y las llamadas a los servicios. La lógica compartida no debe duplicarse innecesariamente entre páginas.
+Las vistas `/tareas/pendientes`, `/tareas/en-progreso`, `/tareas/completadas` y `/tareas/vencidas` reutilizan la página de tareas con el filtro correspondiente. `DashboardPage` y `TasksPage` se cargan de forma diferida mediante `React.lazy`.
+
+Las páginas no deben replicar lógica de persistencia que corresponde a los servicios.
 
 ### `src/components/`
 
-Contiene componentes reutilizables. `ProtectedRoute.tsx` protege las rutas que requieren una sesión válida y utiliza el estado proporcionado por el contexto de autenticación.
+Contiene piezas de interfaz reutilizables. `ProtectedRoute.tsx` autoriza la visualización de rutas privadas únicamente cuando la sesión tiene el estado previsto; durante la inicialización muestra un estado de carga y ante fallos bloquea el acceso con una opción de reintento.
 
 ### `src/context/`
 
-- `AuthContext.tsx`: define el contrato del contexto y el hook `useAuth`.
-- `AuthProvider.tsx`: gestiona el estado y el ciclo de vida de la autenticación, y proporciona el contexto a sus consumidores.
+- `AuthContext.tsx`: expone el contrato de autenticación y el hook `useAuth`.
+- `AuthProvider.tsx`: observa Firebase Authentication, gestiona el ciclo de vida de la sesión y proporciona el contexto.
 
-Ambos archivos tienen responsabilidades diferentes y no deben fusionarse solo para reducir el número de archivos.
+No debe duplicarse el estado global de autenticación en cada página ni fusionarse estos módulos sin revisar su dependencia mutua.
 
 ### `src/lib/`
 
-- `firebaseConfig.ts`: lee y valida las variables de entorno utilizadas para configurar Firebase.
-- `firebase.ts`: inicializa o reutiliza la instancia predeterminada de Firebase.
-- `firestore.ts`: obtiene la instancia de Firestore asociada a la aplicación inicializada.
-
-Esta separación permite centralizar la configuración y reutilizar la inicialización.
+- `firebaseConfig.ts`: lee y valida las variables de configuración del cliente Firebase.
+- `firebase.ts`: inicializa o reutiliza la aplicación Firebase.
+- `firestore.ts`: obtiene la instancia de Cloud Firestore vinculada a la aplicación.
 
 ### `src/services/`
 
-- `authService.ts`: encapsula operaciones de Firebase Authentication.
-- `firestoreTaskService.ts`: realiza las operaciones de tareas en Cloud Firestore.
-- `firestoreTaskMapper.ts`: transforma y valida los datos que se intercambian con Firestore.
-- `taskService.ts` y `taskStorage.ts`: conservan la implementación y los contratos existentes de tareas y almacenamiento local. No deben eliminarse ni mezclarse con Firestore sin analizar primero sus dependencias y pruebas.
+- `authService.ts`: concentra las operaciones de acceso y recuperación de cuenta.
+- `firestoreTaskService.ts`: contiene las operaciones de lectura y escritura de tareas.
+- `firestoreTaskMapper.ts`: transforma y valida la representación de tareas intercambiada con Firestore.
+- `taskService.ts` y `taskStorage.ts`: mantienen contratos e implementaciones locales existentes; su presencia no autoriza a reemplazar silenciosamente Firestore por almacenamiento local.
 
-Las páginas que usan Firestore deben conservar el manejo explícito de errores. Un fallo de red, permisos o datos inválidos no debe presentarse como una lista vacía válida ni activar silenciosamente un fallback a otro almacenamiento.
+Una falla de red, permisos o validación no debe transformarse en un resultado exitoso aparente.
 
-### `src/types/`
+### `src/types/` y `src/utils/`
 
-Contiene tipos compartidos, como el modelo de tarea.
+`src/types/` contiene los contratos compartidos. El tipo de tarea incluye identificador, título, descripción, estado, fechas y marcas de creación y actualización.
 
-### `src/utils/`
+`dateFormatting.ts` presenta fechas para la interfaz. `taskScheduling.ts` calcula vencimientos y prioridad automática sin modificar por sí mismo el estado persistido.
 
-Contiene funciones auxiliares que no pertenecen exclusivamente a una página:
+### Otras carpetas y archivos
 
-- `dateFormatting.ts`: formato de fechas para la interfaz.
-- `taskScheduling.ts`: cálculos y reglas auxiliares relacionadas con fechas y planificación de tareas.
+- `public/`: recursos públicos.
+- `api/`: funciones de servidor desplegadas en Vercel; sus secretos y permisos son independientes de las variables públicas del frontend.
+- `tests/`: pruebas de componentes, páginas, servicios y utilidades.
+- `rules-tests/`: pruebas de acceso a los datos mediante el emulador de Firestore.
+- `firestore.rules`: políticas de seguridad de la base de datos.
+- `firebase.json`: configuración de Firebase CLI.
+- `vitest.rules.config.ts`: ejecución de pruebas de reglas.
+- `.env.example`: nombres de variables de cliente con valores de ejemplo.
 
-### Pruebas
+## 4. Navegación y control de acceso
 
-- `tests/`: pruebas de páginas, componentes, servicios, configuración y utilidades.
-- `rules-tests/`: pruebas específicas de las reglas de seguridad de Firestore mediante el emulador.
+El punto de entrada monta `AuthProvider` dentro del enrutamiento. El contexto distingue la comprobación inicial de la sesión, la autenticación válida y los estados de error o ausencia de sesión. `ProtectedRoute` utiliza ese estado antes de permitir el contenido privado.
 
-Las pruebas de reglas no sustituyen las pruebas de la aplicación: cubren responsabilidades distintas.
+| Área | Rutas principales | Acceso |
+| --- | --- | --- |
+| Información | `/`, `/acerca-de`, `/ayuda`, `/contacto` | Público |
+| Cuenta | `/crear-cuenta`, `/iniciar-sesion`, `/verificar-correo`, `/recuperar-contrasena` | Público según flujo |
+| Trabajo | `/panel`, `/tareas` y sus filtros | Sesión autenticada y verificada |
+| Cuenta personal | `/perfil`, `/configuracion` | Sesión autenticada y verificada |
 
-## 3. Flujo de autenticación
+Las pantallas `/perfil` y `/configuracion` están presentes, pero actualmente muestran funcionalidades anunciadas para una etapa posterior. Su existencia no debe documentarse como edición completa de perfil ni configuración avanzada.
 
-1. `AuthProvider` inicializa y observa el estado de Firebase Authentication.
-2. El estado y las operaciones disponibles se exponen mediante `AuthContext`.
-3. Las páginas consumen el contrato mediante `useAuth`.
-4. `ProtectedRoute` decide si se muestra el contenido protegido, un estado de carga o una redirección.
-5. Los requisitos de verificación del correo deben respetarse tanto en el flujo de interfaz como en las reglas de seguridad que protegen los datos.
+## 5. Modelo y flujo de tareas
 
-No se debe duplicar el estado global de autenticación en páginas individuales ni cambiar el contrato público del contexto sin actualizar sus consumidores y pruebas.
+### Modelo de datos
 
-## 4. Flujo de tareas
+```typescript
+type TaskStatus = 'pendiente' | 'en_progreso' | 'completada';
 
-1. La página recoge la acción del usuario y valida los datos de entrada.
-2. La página utiliza las operaciones exportadas por `firestoreTaskService.ts`.
-3. El servicio accede a Firestore a través de `firestore.ts`.
-4. `firestoreTaskMapper.ts` transforma y valida los datos almacenados o recibidos.
-5. La página presenta el resultado o un error explícito.
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  createdAt: string;
+  updatedAt: string;
+  startDate: string | null;
+  dueDate: string | null;
+}
+```
 
-La ruta de Firestore organiza las tareas bajo `users/{uid}/tasks/{taskId}`. El UID debe proceder de la sesión autenticada, no de un valor arbitrario proporcionado por el cliente.
+La colección de tareas de cada usuario se organiza bajo:
 
-Las reglas de Firestore constituyen una barrera de seguridad independiente de la interfaz. No deben debilitarse para solucionar errores de la aplicación.
+```text
+users/{uid}/tasks/{taskId}
+```
 
-## 5. Fechas y marcas de tiempo
+El `uid` debe proceder de la identidad autenticada. No se debe permitir que el cliente acceda arbitrariamente a colecciones de otro usuario.
 
-Las fechas de calendario, como `startDate` y `dueDate`, deben conservar el contrato `YYYY-MM-DD` o `null`, sin conversiones que cambien el día por diferencias de zona horaria.
+### Secuencia de una operación
 
-Las marcas de tiempo de creación y actualización son datos distintos de las fechas de calendario. Deben mantenerse los tipos y las conversiones definidos por el servicio y el mapper.
+1. La página recibe una acción del usuario: crear, consultar, editar, cambiar de estado o eliminar.
+2. La interfaz valida los campos necesarios y el estado de la sesión.
+3. `firestoreTaskService.ts` ejecuta la operación sobre Firestore.
+4. `firestoreTaskMapper.ts` valida o transforma los datos según su contrato.
+5. La página actualiza la vista o presenta el error real. No debe sustituirlo por datos ficticios.
 
-Cualquier cambio de fechas requiere pruebas para valores nulos, límites de calendario y diferencias de zona horaria cuando sean relevantes.
+### Vistas, vencimientos y prioridad
 
-## 6. Configuración y secretos
+Los estados persistidos son **pendiente**, **en_progreso** y **completada**. La vista **Vencidas** es un filtro calculado con la fecha límite: no modifica el modelo `TaskStatus`.
 
-- `.env.example` documenta los nombres de las variables necesarias con valores de ejemplo.
-- `.env.local` contiene la configuración local y no debe versionarse.
-- Las variables `VITE_*` se incorporan al cliente; no deben usarse para almacenar secretos de servidor.
-- `firebase.json` configura Firebase CLI para las tareas soportadas por el proyecto.
-- `firestore.rules` contiene las reglas de seguridad.
-- `vitest.rules.config.ts` configura las pruebas de reglas.
+Las tareas no completadas con vencimiento hoy o dentro de los cinco días siguientes reciben prioridad **alta**; de seis a diez días, **media**; y a partir de once días, **baja**. Las tareas completadas, vencidas o sin fecha límite no reciben clasificación automática de prioridad.
 
-Los archivos de configuración y reglas deben revisarse junto con sus pruebas correspondientes.
+El panel principal resume cantidades y presenta hasta cinco tareas próximas, priorizando las que tienen fecha límite y ordenando las demás por creación reciente.
 
-## 7. Validaciones antes de entregar
+## 6. Tratamiento de fechas
 
-Ejecutar, según el alcance del cambio:
+Las fechas de calendario `startDate` y `dueDate` utilizan `YYYY-MM-DD` o `null`. Deben mantenerse como fechas de calendario para evitar cambios de día ocasionados por zonas horarias.
+
+`createdAt` y `updatedAt` son marcas de tiempo distintas de las fechas planificadas. Los cambios en validación o conversión requieren pruebas para valores nulos, límites de calendario y zonas horarias.
+
+En el formulario de tareas, la fecha de inicio no debe quedar en el pasado y la fecha límite, cuando ambas están indicadas, no debe ser anterior a la de inicio.
+
+## 7. Seguridad y configuración
+
+- La sesión y la verificación de cuenta condicionan el acceso a funciones privadas.
+- Las reglas `firestore.rules` restringen lectura y escritura, con independencia de la interfaz.
+- Las variables `VITE_*` son públicas en el paquete cliente; no deben almacenar secretos de servidor.
+- `.env.local` contiene valores de desarrollo y debe permanecer fuera de Git.
+- Toda operación de persistencia debe propagar errores reales y conservar el aislamiento entre usuarios.
+- Los cambios de permisos exigen casos de prueba autorizados y denegados.
+
+## 8. Pruebas y criterios de mantenimiento
+
+Ejecutar según el alcance del cambio:
 
 ```bash
 npm test
@@ -112,7 +164,7 @@ npm run build
 firebase emulators:exec --only firestore "npm run test:rules"
 ```
 
-Después, revisar:
+Antes de publicar, revisar:
 
 ```bash
 git diff --check
@@ -120,13 +172,11 @@ git status --short
 git diff
 ```
 
-Las pruebas del emulador son obligatorias para cambios en reglas o en su comportamiento de autorización. No se debe declarar una validación aprobada sin haberla ejecutado.
+Una revisión documental no equivale a haber ejecutado las pruebas del proyecto. Los cambios en seguridad, contratos de tareas o fechas deben acompañarse de comprobaciones de regresión y de casos negativos.
 
-## 8. Criterios para modificar la arquitectura
+## 9. Enlaces relacionados
 
-- Mantener una sola responsabilidad principal por módulo.
-- Evitar carpetas nuevas si no tienen una responsabilidad real.
-- No fusionar archivos únicamente por reducir su cantidad.
-- No cambiar contratos públicos sin actualizar consumidores y pruebas.
-- No eliminar compatibilidad existente sin evidencia y autorización.
-- Mantener los cambios acotados y fáciles de revisar.
+- [← Volver al README principal](../README.md)
+- [Abrir la guía de trabajo con IA](GUIA_TRABAJO_CON_IA.md)
+- [Abrir MateCode SPA](https://api-4-mate-code-spa.vercel.app/)
+- [Consultar el repositorio](https://github.com/mllopezc-cmd/API_4_MateCode_SPA)
